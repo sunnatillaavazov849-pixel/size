@@ -2,13 +2,13 @@ Attribute VB_Name = "SizePlugin"
 '==============================================================================
 '  SIZE - CorelDRAW uchun o'lchamlarni avtomatik ko'rsatuvchi plagin (VBA)
 '
-'  Makroslar:
-'    Size          - tanlangan obyektlar / harflarning enini, bo'yini va
-'                    ular orasidagi bo'shliqlarni ish sahifasida ko'rsatadi
-'    SizeAsk       - sozlamalar oynasini ochadi, "Saqlash va o'lchash" bosilsa o'lchaydi
-'    SizeSettings  - sozlamalar oynasi: shrift, shrift o'lchami, chiziq qalinligi,
-'                    strelka o'lchami, rang va ish rejimlari
-'    SizeClear     - joriy sahifadagi barcha Size o'lchamlarini o'chiradi
+'  Makros bitta: Size. U Size oynasini ochadi, hammasi shu oynada:
+'    O'lchash   - tanlangan obyektlar / harflarning enini, bo'yini va ular
+'                 orasidagi bo'shliqlarni ish sahifasida ko'rsatadi
+'    Tozalash   - joriy sahifadagi barcha Size o'lchamlarini o'chiradi
+'    sozlamalar - shrift, shrift o'lchami, chiziq qalinligi, strelka o'lchami,
+'                 rang va ish rejimlari
+'  Oyna ochiq turadi: obyektlarni tanlab, qayta-qayta "O'lchash" bosish mumkin.
 '
 '  Qoidalar:
 '    * barcha o'lchamlar santimetrda, nuqtadan keyin bitta raqam: 10.6 cm
@@ -30,7 +30,7 @@ Private Const MAX_STEPS As Long = 600
 Private Const BIG As Double = 1E+30
 Private Const MIN_SIZE As Double = 0.0005
 Private Const FORM_NAME As String = "SizeSettingsForm"
-Private Const FORM_TAG As String = "SizeForm v1"
+Private Const FORM_TAG As String = "SizeForm v2"
 
 ' To'g'ri to'rtburchak (cm): chap, past, o'ng, yuqori
 Private Type TBox
@@ -154,30 +154,38 @@ Private gLabH() As Double
 '  OCHIQ MAKROSLAR
 '==============================================================================
 
-' Tanlangan obyektlarni o'lchash
+' Yagona makros: Size oynasini ochadi
 Public Sub Size()
-    RunSize False
+    If Not ShowSizeWindow() Then SizeFallbackMenu
 End Sub
 
-' Sozlamalar oynasini ochib, keyin o'lchash
-Public Sub SizeAsk()
-    Dim act As String
-    If ShowSettingsForm(act) Then
-        If act = "run" Then RunSize False
-    Else
-        RunSize True
-    End If
+' Oynani yaratib bo'lmasa - oddiy so'rov orqali tanlash
+Private Sub SizeFallbackMenu()
+    Dim r As String, ok As Boolean, msg As String
+    r = InputBox("Nima qilamiz?" & vbCr & vbCr & _
+                 "1 - O'lchash" & vbCr & _
+                 "2 - Sozlamalar" & vbCr & _
+                 "3 - O'lchamlarni o'chirish", "Size", "1")
+    If StrPtr(r) = 0 Then Exit Sub
+    Select Case Trim$(r)
+        Case "2"
+            SizeSettingsBasic
+        Case "3"
+            msg = DoClear(ok)
+            MsgBox msg, vbInformation, "Size"
+        Case Else
+            msg = DoSize(ok)
+            If Not ok Then MsgBox msg, vbExclamation, "Size"
+    End Select
 End Sub
 
 ' Joriy sahifadagi barcha Size o'lchamlarini o'chirish
-Public Sub SizeClear()
+Private Function DoClear(ok As Boolean) As String
     Dim lyr As Layer
-    If ActiveDocument Is Nothing Then Exit Sub
+    ok = False
+    If ActiveDocument Is Nothing Then DoClear = "Ochiq hujjat yo'q.": Exit Function
     Set lyr = GetSizeLayer(False)
-    If lyr Is Nothing Then
-        MsgBox "Bu sahifada Size o'lchamlari yo'q.", vbInformation, "Size"
-        Exit Sub
-    End If
+    If lyr Is Nothing Then DoClear = "Bu sahifada Size o'lchamlari yo'q.": Exit Function
     ActiveDocument.BeginCommandGroup "Size: tozalash"
     On Error Resume Next
     lyr.Editable = True
@@ -186,17 +194,9 @@ Public Sub SizeClear()
     On Error GoTo 0
     ActiveDocument.EndCommandGroup
     ActiveWindow.Refresh
-End Sub
-
-' Sozlamalar oynasi
-Public Sub SizeSettings()
-    Dim act As String
-    If ShowSettingsForm(act) Then
-        If act = "run" Then RunSize False
-    Else
-        SizeSettingsBasic
-    End If
-End Sub
+    ok = True
+    DoClear = "O'lchamlar o'chirildi."
+End Function
 
 ' Oynani yaratib bo'lmasa - sozlamalar ketma-ket so'raladi
 Private Sub SizeSettingsBasic()
@@ -288,37 +288,27 @@ End Sub
 '  ASOSIY JARAYON
 '==============================================================================
 
-Private Sub RunSize(ByVal askFont As Boolean)
+' Tanlangan obyektlarni o'lchab chizadi. Natija haqida xabar qaytaradi,
+' ok = True - o'lchamlar chizildi.
+Private Function DoSize(ok As Boolean) As String
     Dim doc As Document, sel As ShapeRange, lyr As Layer, oldLayer As Layer
     Dim res As ShapeRange, grp As Shape
-    Dim oldUnit As cdrUnit, r As String, v As Double
+    Dim oldUnit As cdrUnit
     Dim errMsg As String, started As Boolean
 
+    ok = False
     Set doc = ActiveDocument
     If doc Is Nothing Then
-        MsgBox "Ochiq hujjat yo'q.", vbExclamation, "Size"
-        Exit Sub
+        DoSize = "Ochiq hujjat yo'q."
+        Exit Function
     End If
     Set sel = ActiveSelectionRange
     If sel.Count = 0 Then
-        MsgBox "Avval o'lchanadigan obyekt yoki harflarni tanlang.", vbInformation, "Size"
-        Exit Sub
+        DoSize = "Avval o'lchanadigan obyekt yoki harflarni tanlang."
+        Exit Function
     End If
 
     LoadSettings
-    If askFont Then
-        If Not Ask("Raqamlar shrift o'lchami (pt)." & vbCr & vbCr & _
-                   "0 = avtomatik (harflar o'lchamiga qarab tanlanadi)", _
-                   FormatNum(gFontPt), r) Then Exit Sub
-        v = ParseNum(r)
-        If v < 0 Or v > 3000 Then
-            MsgBox "Shrift o'lchami 0 dan 3000 gacha bo'lishi kerak.", vbExclamation, "Size"
-            Exit Sub
-        End If
-        gFontPt = v
-        SaveSetting APP_KEY, SET_KEY, "FontPt", FormatNum(gFontPt)
-    End If
-
     gFontName = ResolveFont(gFontName)
     oldUnit = doc.Unit
     Set oldLayer = ActiveLayer
@@ -369,13 +359,18 @@ CleanUp:
     ActiveWindow.Refresh
     Application.Refresh
     On Error GoTo 0
-    If errMsg <> "" Then MsgBox errMsg, vbExclamation, "Size"
-    Exit Sub
+    If errMsg = "" Then
+        ok = True
+        DoSize = gDimN & " ta o'lcham chizildi (" & gItemN & " ta obyekt / harf)."
+    Else
+        DoSize = errMsg
+    End If
+    Exit Function
 
 Failed:
-    errMsg = "Size: xatolik yuz berdi." & vbCr & Err.Description
+    errMsg = "Xatolik yuz berdi: " & Err.Description
     Resume CleanUp
-End Sub
+End Function
 
 '==============================================================================
 '  OBYEKTLARNI YIG'ISH
@@ -1558,25 +1553,26 @@ End Function
 '  SOZLAMALAR OYNASI (to'q kulrang fon, oq yozuvlar)
 '==============================================================================
 
-' Oynani ko'rsatadi. False - oynani yaratib bo'lmadi (unda oddiy so'rovlar
-' ishlatiladi). action: "run" - saqlab o'lchash, "ok" - saqlash, "" - bekor.
-Private Function ShowSettingsForm(ByRef action As String) As Boolean
-    Dim f As Object, ok As Boolean
-    action = ""
-    If Not EnsureForm() Then Exit Function
+' Size oynasini ochadi (oyna ochiq turadi - CorelDRAW'da ishlashda davom etish
+' mumkin). False - oynani yaratib bo'lmadi.
+Private Function ShowSizeWindow() As Boolean
+    Dim f As Object
     On Error GoTo Failed
+    ' oyna allaqachon yuklangan bo'lsa - shuni ko'rsatamiz
+    For Each f In VBA.UserForms
+        If f.Name = FORM_NAME Then
+            f.Show 0
+            ShowSizeWindow = True
+            Exit Function
+        End If
+    Next f
+    If Not EnsureForm() Then Exit Function
     Set f = VBA.UserForms.Add(FORM_NAME)
-    f.Show
-    action = CStr(f.Tag)
-    ok = True
-Done:
-    On Error Resume Next
-    If Not f Is Nothing Then Unload f
-    ShowSettingsForm = ok
+    f.Show 0                            ' 0 = vbModeless
+    ShowSizeWindow = True
     Exit Function
 Failed:
-    ok = False
-    Resume Done
+    ShowSizeWindow = False
 End Function
 
 ' Oyna (UserForm) GlobalMacros loyihasida bo'lmasa - yaratadi, kodi eski
@@ -1621,16 +1617,46 @@ Private Function FindComponent(p As Object, ByVal nm As String) As Object
     Set FindComponent = p.VBComponents(nm)
 End Function
 
+' --- oyna tugmalari ---
+
+Public Sub SizeFormRun(f As Object)
+    Dim ok As Boolean, msg As String
+    If Not SizeFormSave(f) Then Exit Sub
+    SetStatus f, "O'lchanmoqda...", True
+    msg = DoSize(ok)
+    SetStatus f, msg, ok
+End Sub
+
+Public Sub SizeFormClear(f As Object)
+    Dim ok As Boolean, msg As String
+    msg = DoClear(ok)
+    SetStatus f, msg, ok
+End Sub
+
+Public Sub SizeFormClose(f As Object)
+    SizeFormSave f, True                ' to'g'ri qiymatlar jimgina saqlanadi
+    f.Hide
+End Sub
+
+Private Sub SetStatus(f As Object, ByVal msg As String, ByVal ok As Boolean)
+    On Error Resume Next
+    With f.Controls("lblStatus")
+        .Caption = msg
+        If ok Then .ForeColor = ColText() Else .ForeColor = VBA.RGB(255, 196, 92)
+    End With
+    f.Repaint
+End Sub
+
 ' Oynaning boshqaruv elementlari (oyna ochilganda chaqiriladi)
 Public Sub SizeFormBuild(f As Object)
     Dim c As Object, y As Single
     On Error GoTo Failed
     LoadSettings
 
-    f.Caption = "Size - sozlamalar"
+    f.Caption = "Size"
     f.BackColor = ColBg()
     f.Width = 352
-    f.Height = 446
+    f.Height = 484
 
     y = 10
     FHeading f, "RAQAMLAR", y
@@ -1684,9 +1710,19 @@ Public Sub SizeFormBuild(f As Object)
     FCheck f, "chkRotate", "Bo'yi raqamini vertikal yozish", 14, y, 318, gRotateVertical
 
     y = y + 36
-    FButton f, "btnRun", "Saqlash va o'lchash", 14, y, 136, True
-    FButton f, "btnOK", "Saqlash", 156, y, 84, False
-    FButton f, "btnCancel", "Bekor qilish", 246, y, 86, False
+    Set c = FButton(f, "btnRun", "O'lchash", 14, y, 136, True)
+    c.Default = True
+    FButton f, "btnClear", "Tozalash", 156, y, 84, False
+    FButton f, "btnClose", "Yopish", 246, y, 86, False
+
+    y = y + 32
+    Set c = f.Controls.Add("Forms.Label.1", "lblStatus", True)
+    c.Left = 14: c.Top = y: c.Width = 318: c.Height = 30
+    c.WordWrap = True
+    c.BackStyle = 0
+    c.ForeColor = ColText()
+    c.Caption = "Obyekt yoki harflarni tanlab, ""O'lchash"" tugmasini bosing."
+    FStyleFont c, False
 
     SizeFormSync f
     Exit Sub
@@ -1724,8 +1760,8 @@ NoDialog:
            "Rangni R,G,B ko'rinishida yozing, masalan: 0,90,200", vbInformation, "Size"
 End Sub
 
-' Oynadagi qiymatlarni tekshirib saqlaydi
-Public Function SizeFormSave(f As Object) As Boolean
+' Oynadagi qiymatlarni tekshirib saqlaydi (quiet = xato bo'lsa xabar chiqarmaydi)
+Public Function SizeFormSave(f As Object, Optional ByVal quiet As Boolean = False) As Boolean
     Dim fontPt As Double, lineMM As Double, arrowMM As Double
     Dim nm As String, r As Long, g As Long, b As Long
     On Error GoTo Failed
@@ -1735,7 +1771,7 @@ Public Function SizeFormSave(f As Object) As Boolean
     Else
         fontPt = ParseNum(f.Controls("txtFontPt").Text)
         If fontPt < 1 Or fontPt > 3000 Then
-            MsgBox "Shrift o'lchami 1 dan 3000 pt gacha bo'lishi kerak.", vbExclamation, "Size"
+            If Not quiet Then MsgBox "Shrift o'lchami 1 dan 3000 pt gacha bo'lishi kerak.", vbExclamation, "Size"
             Exit Function
         End If
     End If
@@ -1744,7 +1780,7 @@ Public Function SizeFormSave(f As Object) As Boolean
     Else
         lineMM = ParseNum(f.Controls("txtLine").Text)
         If lineMM < 0.01 Or lineMM > 50 Then
-            MsgBox "Chiziq qalinligi 0.01 dan 50 mm gacha bo'lishi kerak.", vbExclamation, "Size"
+            If Not quiet Then MsgBox "Chiziq qalinligi 0.01 dan 50 mm gacha bo'lishi kerak.", vbExclamation, "Size"
             Exit Function
         End If
     End If
@@ -1753,12 +1789,12 @@ Public Function SizeFormSave(f As Object) As Boolean
     Else
         arrowMM = ParseNum(f.Controls("txtArrow").Text)
         If arrowMM < 0.1 Or arrowMM > 500 Then
-            MsgBox "Strelka uzunligi 0.1 dan 500 mm gacha bo'lishi kerak.", vbExclamation, "Size"
+            If Not quiet Then MsgBox "Strelka uzunligi 0.1 dan 500 mm gacha bo'lishi kerak.", vbExclamation, "Size"
             Exit Function
         End If
     End If
     If Not ParseColor(f.Controls("txtColor").Text, r, g, b) Then
-        MsgBox "Rang noto'g'ri kiritildi. Namuna: 0,90,200", vbExclamation, "Size"
+        If Not quiet Then MsgBox "Rang noto'g'ri kiritildi. Namuna: 0,90,200", vbExclamation, "Size"
         Exit Function
     End If
     nm = Trim$(f.Controls("cboFont").Text)
@@ -1779,7 +1815,7 @@ Public Function SizeFormSave(f As Object) As Boolean
     SizeFormSave = True
     Exit Function
 Failed:
-    MsgBox "Sozlamalarni saqlab bo'lmadi." & vbCr & Err.Description, vbExclamation, "Size"
+    If Not quiet Then MsgBox "Sozlamalarni saqlab bo'lmadi." & vbCr & Err.Description, vbExclamation, "Size"
 End Function
 
 ' --- oyna elementlari ---
@@ -1945,9 +1981,9 @@ Private Function FormCode() As String
     s = s & "' Uni o'zgartirmang: SizePlugin moduli yangilanganda kod qayta yoziladi." & vbCrLf
     s = s & "Option Explicit" & vbCrLf
     s = s & "" & vbCrLf
-    s = s & "Private WithEvents mOK As MSForms.CommandButton" & vbCrLf
     s = s & "Private WithEvents mRun As MSForms.CommandButton" & vbCrLf
-    s = s & "Private WithEvents mCancel As MSForms.CommandButton" & vbCrLf
+    s = s & "Private WithEvents mClear As MSForms.CommandButton" & vbCrLf
+    s = s & "Private WithEvents mClose As MSForms.CommandButton" & vbCrLf
     s = s & "Private WithEvents mColor As MSForms.CommandButton" & vbCrLf
     s = s & "Private WithEvents mFontAuto As MSForms.CheckBox" & vbCrLf
     s = s & "Private WithEvents mLineAuto As MSForms.CheckBox" & vbCrLf
@@ -1956,9 +1992,9 @@ Private Function FormCode() As String
     s = s & "" & vbCrLf
     s = s & "Private Sub UserForm_Initialize()" & vbCrLf
     s = s & "    SizePlugin.SizeFormBuild Me" & vbCrLf
-    s = s & "    Set mOK = Me.Controls(""btnOK"")" & vbCrLf
     s = s & "    Set mRun = Me.Controls(""btnRun"")" & vbCrLf
-    s = s & "    Set mCancel = Me.Controls(""btnCancel"")" & vbCrLf
+    s = s & "    Set mClear = Me.Controls(""btnClear"")" & vbCrLf
+    s = s & "    Set mClose = Me.Controls(""btnClose"")" & vbCrLf
     s = s & "    Set mColor = Me.Controls(""btnColor"")" & vbCrLf
     s = s & "    Set mFontAuto = Me.Controls(""chkFontAuto"")" & vbCrLf
     s = s & "    Set mLineAuto = Me.Controls(""chkLineAuto"")" & vbCrLf
@@ -1966,23 +2002,16 @@ Private Function FormCode() As String
     s = s & "    Set mColorTxt = Me.Controls(""txtColor"")" & vbCrLf
     s = s & "End Sub" & vbCrLf
     s = s & "" & vbCrLf
-    s = s & "Private Sub mOK_Click()" & vbCrLf
-    s = s & "    If SizePlugin.SizeFormSave(Me) Then" & vbCrLf
-    s = s & "        Me.Tag = ""ok""" & vbCrLf
-    s = s & "        Me.Hide" & vbCrLf
-    s = s & "    End If" & vbCrLf
-    s = s & "End Sub" & vbCrLf
-    s = s & "" & vbCrLf
     s = s & "Private Sub mRun_Click()" & vbCrLf
-    s = s & "    If SizePlugin.SizeFormSave(Me) Then" & vbCrLf
-    s = s & "        Me.Tag = ""run""" & vbCrLf
-    s = s & "        Me.Hide" & vbCrLf
-    s = s & "    End If" & vbCrLf
+    s = s & "    SizePlugin.SizeFormRun Me" & vbCrLf
     s = s & "End Sub" & vbCrLf
     s = s & "" & vbCrLf
-    s = s & "Private Sub mCancel_Click()" & vbCrLf
-    s = s & "    Me.Tag = """"" & vbCrLf
-    s = s & "    Me.Hide" & vbCrLf
+    s = s & "Private Sub mClear_Click()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormClear Me" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mClose_Click()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormClose Me" & vbCrLf
     s = s & "End Sub" & vbCrLf
     s = s & "" & vbCrLf
     s = s & "Private Sub mColor_Click()" & vbCrLf
@@ -2008,8 +2037,7 @@ Private Function FormCode() As String
     s = s & "Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)" & vbCrLf
     s = s & "    If CloseMode = 0 Then" & vbCrLf
     s = s & "        Cancel = True" & vbCrLf
-    s = s & "        Me.Tag = """"" & vbCrLf
-    s = s & "        Me.Hide" & vbCrLf
+    s = s & "        SizePlugin.SizeFormClose Me" & vbCrLf
     s = s & "    End If" & vbCrLf
     s = s & "End Sub" & vbCrLf
     FormCode = s

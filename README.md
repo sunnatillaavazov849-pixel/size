@@ -50,33 +50,32 @@ o–r oraliqlari alohida ko'rsatiladi.
 
 ## Ishlatish
 
-1. Bir yoki bir nechta obyekt, harf yoki matnni tanlang.
-2. `Alt+Shift+F11` (*Tools → Macros → Run Macro*, 2020+ versiyalarda
-   *Tools → Scripts → Run Script*) oynasini oching va
-   `GlobalMacros → SizePlugin.Size` makrosini ishga tushiring.
+Plaginda bitta makros bor: **`Size`**. U Size oynasini ochadi, hammasi shu
+oynada:
 
-Qulay bo'lishi uchun makrosni tugma yoki klaviatura kombinatsiyasiga
+1. `Alt+Shift+F11` (*Tools → Macros → Run Macro*, 2020+ versiyalarda
+   *Tools → Scripts → Run Script*) oynasini oching va
+   `GlobalMacros → SizePlugin.Size` ni ishga tushiring. Size oynasi ochiladi.
+2. Chizmada obyekt, harf yoki matnni tanlang. Oyna ochiq turaveradi.
+3. **O'lchash** tugmasini (yoki `Enter`) bosing. Natija oynaning pastki
+   qatorida yoziladi, masalan: `19 ta o'lcham chizildi (6 ta obyekt / harf)`.
+4. Boshqa obyektlarni tanlab, yana **O'lchash** ni bosish mumkin.
+   **Tozalash** joriy sahifadagi barcha Size o'lchamlarini o'chiradi,
+   **Yopish** oynani yopadi.
+
+Qulay bo'lishi uchun `Size` ni tugma yoki klaviatura kombinatsiyasiga
 biriktiring: *Tools → Options → Customization → Commands* bo'limida
 ro'yxatdan **Macros** ni tanlang, `GlobalMacros.SizePlugin.Size` ni asboblar
 paneliga sudrab qo'ying yoki *Shortcut Keys* yorlig'ida unga tugma
 biriktiring.
 
-### Makroslar
-
-| Makros         | Vazifasi |
-|----------------|----------|
-| `Size`         | Tanlangan obyektlarni o'lchaydi va o'lchamlarni chizadi. |
-| `SizeAsk`      | Sozlamalar oynasini ochadi. **Saqlash va o'lchash** bosilsa, tanlangan obyektlarni darhol o'lchaydi. |
-| `SizeSettings` | Sozlamalar oynasi (pastga qarang). |
-| `SizeClear`    | Joriy sahifadagi barcha Size o'lchamlarini (qatlami bilan birga) o'chiradi. |
-
-Har bir `Size` ishga tushishi bitta qadam sifatida yoziladi, shuning uchun
+Har bir **O'lchash** bitta qadam sifatida yoziladi, shuning uchun
 `Ctrl+Z` uni to'liq bekor qiladi. Natija alohida qatlamda bo'lgani uchun uni
 *Object Manager* orqali yashirish, chop etishdan chiqarish yoki qulflash
 mumkin. Qayta ishga tushirilganda yangi o'lchamlar oldingi o'lchamlar
 ustiga tushmaydi.
 
-## Sozlamalar oynasi (`SizeSettings`)
+## Size oynasi
 
 Oyna to'q kulrang fonda, yozuvlari oq. Unda quyidagilar bor:
 
@@ -94,16 +93,16 @@ Oyna to'q kulrang fonda, yozuvlari oq. Unda quyidagilar bor:
 | | Kontur qalinligini hisobga olish | o'chirilgan | Obyekt konturining (outline) qalinligi o'lchamga qo'shiladi. |
 | | Bo'yi raqamini vertikal yozish | yoqilgan | O'chirilsa, bo'yi raqamlari gorizontal yoziladi. |
 
-Tugmalar: **Saqlash va o'lchash**, **Saqlash**, **Bekor qilish**. Sozlamalar
-Windows reyestrida saqlanadi va CorelDRAW qayta ochilganda ham saqlanib
-qoladi.
+Tugmalar: **O'lchash**, **Tozalash**, **Yopish**. Sozlamalar **O'lchash**
+yoki **Yopish** bosilganda Windows reyestriga saqlanadi va CorelDRAW qayta
+ochilganda ham saqlanib qoladi.
 
 Oyna birinchi marta ochilganda plagin uni `GlobalMacros` loyihasida
 `SizeSettingsForm` nomi bilan o'zi yaratadi. Uni o'chirmang va
 o'zgartirmang. CorelDRAW yopilayotganda `GlobalMacros` ni saqlashni so'rasa,
 **Ha** ni bosing. Agar oynani yaratib bo'lmasa (masalan, VBA loyihasi
-qulflangan bo'lsa), sozlamalar avvalgidek ketma-ket so'rov oynalari orqali
-so'raladi.
+qulflangan bo'lsa), `Size` oddiy so'rov oynasini ochadi: `1` — o'lchash,
+`2` — sozlamalar, `3` — o'lchamlarni o'chirish.
 
 ### Avtomatik shrift o'lchami
 
@@ -147,11 +146,11 @@ kabi shrift o'lchamiga mos ravishda kattalashadi yoki kichrayadi.
   bo'lsa (sifatsiz shriftlarda uchraydi), yordamchi chiziq harfning butun
   balandligi bo'ylab qo'yiladi.
 - Bitta egri chiziqdan iborat logotip ham harflarga ajratish rejimida
-  konturlar bo'yicha bo'linadi. Buni xohlamasangiz, `SizeSettings` orqali
+  konturlar bo'yicha bo'linadi. Buni xohlamasangiz, Size oynasida
   harflarga ajratishni o'chiring.
 - Hujjatda chizma masshtabi (*Drawing scale*) sozlangan bo'lsa ham,
   o'lchamlar haqiqiy (1:1) santimetrda ko'rsatiladi.
 - Juda zich joylashgan kichik harflarda raqamlar uchun joy kam bo'ladi.
   Bunday holda raqamlar baribir ustma-ust tushmaydi, lekin ba'zi yordamchi
   chiziqlar uzunroq bo'lib, boshqa obyektlar ustidan o'tishi mumkin. Shrift
-  o'lchamini `SizeAsk` orqali kichraytirsangiz, chizma ixchamroq bo'ladi.
+  o'lchamini Size oynasida kichraytirsangiz, chizma ixchamroq bo'ladi.
