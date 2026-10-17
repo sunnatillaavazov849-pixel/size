@@ -1,2 +1,4 @@
-# VBA muharriri .bas fayllarni Windows (CRLF) qator oxirlari bilan import qiladi
+# VBA muharriri .bas/.frm fayllarni Windows (CRLF) qator oxirlari bilan import qiladi
 *.bas -text
+*.frm -text
+*.frx binary

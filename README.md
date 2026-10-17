@@ -40,13 +40,31 @@ o–r oraliqlari alohida ko'rsatiladi.
 
 ## O'rnatish
 
-1. CorelDRAW'ni oching va `Alt+F11` tugmalarini bosing (yoki
+Plagin uchta fayldan iborat (hammasi `src/` papkasida):
+
+| Fayl | Nima |
+|------|------|
+| `SizePlugin.bas` | Plaginning o'zi (o'lchash, joylashtirish, sozlamalar). |
+| `SizeForm.frm` | Size oynasi. |
+| `SizeForm.frx` | Oynaning ikkilik qismi. `SizeForm.frm` bilan **bir papkada** turishi shart. |
+
+1. Fayllarni GitHub'dan **Code → Download ZIP** orqali yuklab oling va
+   arxivni oching. `.frm`/`.bas` fayllarni brauzerdan nusxa ko'chirib yoki
+   "raw" ko'rinishda saqlamang, aks holda qator oxirlari buziladi va VBA ularni
+   to'g'ri import qilmaydi.
+2. CorelDRAW'ni oching va `Alt+F11` tugmalarini bosing (yoki
    *Tools → Macros → Visual Basic Editor*; 2020+ versiyalarda
    *Tools → Scripts → Script Editor*).
-2. Chap tomondagi **Project** oynasida `GlobalMacros` loyihasini tanlang.
-3. *File → Import File...* menyusini bosib, `src/SizePlugin.bas` faylini
-   tanlang. Loyihada `SizePlugin` moduli paydo bo'ladi.
-4. `Ctrl+S` bilan saqlang va VBA muharririni yoping.
+3. Chap tomondagi **Project** oynasida `GlobalMacros` loyihasini tanlang.
+4. *File → Import File...* orqali avval `src/SizePlugin.bas`, keyin
+   `src/SizeForm.frm` faylini import qiling. Loyihada `Modules → SizePlugin`
+   va `Forms → SizeForm` paydo bo'ladi.
+5. `Ctrl+S` bilan saqlang va VBA muharririni yoping.
+
+Eski versiyadan yangilashda avval eski `SizePlugin` modulini va (bo'lsa)
+`SizeForm` oynasini o'chiring (o'ng tugma → *Remove*), keyin yangilarini
+import qiling. Oldingi versiya avtomatik yaratgan `SizeSettingsForm` endi
+kerak emas, uni ham o'chirsa bo'ladi.
 
 ## Ishlatish
 
@@ -97,12 +115,10 @@ Tugmalar: **O'lchash**, **Tozalash**, **Yopish**. Sozlamalar **O'lchash**
 yoki **Yopish** bosilganda Windows reyestriga saqlanadi va CorelDRAW qayta
 ochilganda ham saqlanib qoladi.
 
-Oyna birinchi marta ochilganda plagin uni `GlobalMacros` loyihasida
-`SizeSettingsForm` nomi bilan o'zi yaratadi. Uni o'chirmang va
-o'zgartirmang. CorelDRAW yopilayotganda `GlobalMacros` ni saqlashni so'rasa,
-**Ha** ni bosing. Agar oynani yaratib bo'lmasa (masalan, VBA loyihasi
-qulflangan bo'lsa), `Size` oddiy so'rov oynasini ochadi: `1` — o'lchash,
-`2` — sozlamalar, `3` — o'lchamlarni o'chirish.
+Agar `SizeForm` import qilinmagan bo'lsa, plagin oynani VBA muharriri orqali
+o'zi yaratishga urinadi (`SizeSettingsForm`). Bu ham bo'lmasa, `Size` oddiy
+so'rov oynasini ochadi: `1` — o'lchash, `2` — sozlamalar, `3` — o'lchamlarni
+o'chirish.
 
 ### Avtomatik shrift o'lchami
 

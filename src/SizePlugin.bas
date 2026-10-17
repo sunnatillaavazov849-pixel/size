@@ -29,7 +29,8 @@ Private Const MIN_STEPS As Long = 40
 Private Const MAX_STEPS As Long = 600
 Private Const BIG As Double = 1E+30
 Private Const MIN_SIZE As Double = 0.0005
-Private Const FORM_NAME As String = "SizeSettingsForm"
+Private Const FORM_FILE_NAME As String = "SizeForm"       ' SizeForm.frm dan import qilingan oyna
+Private Const FORM_NAME As String = "SizeSettingsForm"     ' import qilinmagan bo'lsa - avtomatik yaratiladigan oyna
 Private Const FORM_TAG As String = "SizeForm v2"
 
 ' To'g'ri to'rtburchak (cm): chap, past, o'ng, yuqori
@@ -162,7 +163,8 @@ End Sub
 ' Oynani yaratib bo'lmasa - oddiy so'rov orqali tanlash
 Private Sub SizeFallbackMenu()
     Dim r As String, ok As Boolean, msg As String
-    r = InputBox("Nima qilamiz?" & vbCr & vbCr & _
+    r = InputBox("Size oynasi topilmadi: SizeForm.frm faylini ham import qiling." & vbCr & vbCr & _
+                 "Nima qilamiz?" & vbCr & vbCr & _
                  "1 - O'lchash" & vbCr & _
                  "2 - Sozlamalar" & vbCr & _
                  "3 - O'lchamlarni o'chirish", "Size", "1")
@@ -1554,25 +1556,35 @@ End Function
 '==============================================================================
 
 ' Size oynasini ochadi (oyna ochiq turadi - CorelDRAW'da ishlashda davom etish
-' mumkin). False - oynani yaratib bo'lmadi.
+' mumkin). Avval SizeForm.frm dan import qilingan oyna ishlatiladi; u bo'lmasa,
+' oyna VBA muharriri orqali yaratiladi. False - oynani ochib bo'lmadi.
 Private Function ShowSizeWindow() As Boolean
     Dim f As Object
     On Error GoTo Failed
     ' oyna allaqachon yuklangan bo'lsa - shuni ko'rsatamiz
     For Each f In VBA.UserForms
-        If f.Name = FORM_NAME Then
+        If f.Name = FORM_FILE_NAME Or f.Name = FORM_NAME Then
             f.Show 0
             ShowSizeWindow = True
             Exit Function
         End If
     Next f
-    If Not EnsureForm() Then Exit Function
-    Set f = VBA.UserForms.Add(FORM_NAME)
+    Set f = Nothing
+    Set f = LoadFormByName(FORM_FILE_NAME)
+    If f Is Nothing Then
+        If EnsureForm() Then Set f = LoadFormByName(FORM_NAME)
+    End If
+    If f Is Nothing Then Exit Function
     f.Show 0                            ' 0 = vbModeless
     ShowSizeWindow = True
     Exit Function
 Failed:
     ShowSizeWindow = False
+End Function
+
+Private Function LoadFormByName(ByVal nm As String) As Object
+    On Error Resume Next
+    Set LoadFormByName = VBA.UserForms.Add(nm)
 End Function
 
 ' Oyna (UserForm) GlobalMacros loyihasida bo'lmasa - yaratadi, kodi eski
