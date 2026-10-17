@@ -5,8 +5,9 @@ Attribute VB_Name = "SizePlugin"
 '  Makroslar:
 '    Size          - tanlangan obyektlar / harflarning enini, bo'yini va
 '                    ular orasidagi bo'shliqlarni ish sahifasida ko'rsatadi
-'    SizeAsk       - avval raqamlar shrift o'lchamini so'raydi, keyin o'lchaydi
-'    SizeSettings  - barcha sozlamalar (shrift, rang, ish rejimlari)
+'    SizeAsk       - sozlamalar oynasini ochadi, "Saqlash va o'lchash" bosilsa o'lchaydi
+'    SizeSettings  - sozlamalar oynasi: shrift, shrift o'lchami, chiziq qalinligi,
+'                    strelka o'lchami, rang va ish rejimlari
 '    SizeClear     - joriy sahifadagi barcha Size o'lchamlarini o'chiradi
 '
 '  Qoidalar:
@@ -28,6 +29,8 @@ Private Const MIN_STEPS As Long = 40
 Private Const MAX_STEPS As Long = 600
 Private Const BIG As Double = 1E+30
 Private Const MIN_SIZE As Double = 0.0005
+Private Const FORM_NAME As String = "SizeSettingsForm"
+Private Const FORM_TAG As String = "SizeForm v1"
 
 ' To'g'ri to'rtburchak (cm): chap, past, o'ng, yuqori
 Private Type TBox
@@ -95,6 +98,8 @@ End Type
 
 ' --- Sozlamalar ---
 Private gFontPt As Double           ' 0 = avtomatik
+Private gLineMM As Double           ' o'lcham chizig'i qalinligi, mm (0 = avtomatik)
+Private gArrowMM As Double          ' strelka uzunligi, mm (0 = avtomatik)
 Private gFontName As String
 Private gBold As Boolean
 Private gColR As Long
@@ -154,9 +159,14 @@ Public Sub Size()
     RunSize False
 End Sub
 
-' Shrift o'lchamini so'rab, keyin o'lchash
+' Sozlamalar oynasini ochib, keyin o'lchash
 Public Sub SizeAsk()
-    RunSize True
+    Dim act As String
+    If ShowSettingsForm(act) Then
+        If act = "run" Then RunSize False
+    Else
+        RunSize True
+    End If
 End Sub
 
 ' Joriy sahifadagi barcha Size o'lchamlarini o'chirish
@@ -178,9 +188,19 @@ Public Sub SizeClear()
     ActiveWindow.Refresh
 End Sub
 
-' Sozlamalar
+' Sozlamalar oynasi
 Public Sub SizeSettings()
-    Dim r As String, v As Double
+    Dim act As String
+    If ShowSettingsForm(act) Then
+        If act = "run" Then RunSize False
+    Else
+        SizeSettingsBasic
+    End If
+End Sub
+
+' Oynani yaratib bo'lmasa - sozlamalar ketma-ket so'raladi
+Private Sub SizeSettingsBasic()
+    Dim r As String, v As Double, lineMM As Double, arrowMM As Double
     Dim fontPt As Double, fontName As String, bold As Boolean
     Dim cr As Long, cg As Long, cb As Long
     Dim splitTxt As Boolean, overall As Boolean, items As Boolean, useOut As Boolean, rotV As Boolean
@@ -196,6 +216,22 @@ Public Sub SizeSettings()
         Exit Sub
     End If
     fontPt = v
+
+    If Not Ask("O'lcham chizig'i qalinligi (mm)." & vbCr & vbCr & "0 = avtomatik", _
+               FormatNum(gLineMM), r) Then Exit Sub
+    lineMM = ParseNum(r)
+    If lineMM < 0 Or lineMM > 50 Then
+        MsgBox "Chiziq qalinligi 0 dan 50 mm gacha bo'lishi kerak.", vbExclamation, "Size"
+        Exit Sub
+    End If
+
+    If Not Ask("Strelka uzunligi (mm)." & vbCr & vbCr & "0 = avtomatik", _
+               FormatNum(gArrowMM), r) Then Exit Sub
+    arrowMM = ParseNum(r)
+    If arrowMM < 0 Or arrowMM > 500 Then
+        MsgBox "Strelka uzunligi 0 dan 500 mm gacha bo'lishi kerak.", vbExclamation, "Size"
+        Exit Sub
+    End If
 
     If Not Ask("Raqamlar shrifti nomi:", gFontName, r) Then Exit Sub
     fontName = Trim$(r)
@@ -233,7 +269,9 @@ Public Sub SizeSettings()
     rotV = (ParseNum(r) <> 0)
 
     gFontPt = fontPt
-    gFontName = fontName
+    gLineMM = lineMM
+    gArrowMM = arrowMM
+    gFontName = ResolveFont(fontName)
     gBold = bold
     gColR = cr: gColG = cg: gColB = cb
     gSplitText = splitTxt
@@ -281,6 +319,7 @@ Private Sub RunSize(ByVal askFont As Boolean)
         SaveSetting APP_KEY, SET_KEY, "FontPt", FormatNum(gFontPt)
     End If
 
+    gFontName = ResolveFont(gFontName)
     oldUnit = doc.Unit
     Set oldLayer = ActiveLayer
 
@@ -1007,8 +1046,19 @@ Private Sub ComputeGeometry()
     gOver = gEm * 0.2                 ' yordamchi chiziqning o'lcham chizig'idan chiqishi
     gOff0 = gEm * 0.55                ' o'lcham chizig'ining obyektdan masofasi
     gStep = gEm * 0.3                 ' joy qidirish qadami
-    gLabelGap = gEm * 0.15            ' yozuv va o'lcham chizig'i orasidagi masofa
     gPad = gEm * 0.1                  ' yozuvlar atrofidagi bo'sh joy
+
+    ' qo'lda berilgan chiziq qalinligi va strelka o'lchami (mm -> cm)
+    If gLineMM > 0 Then
+        gLineW = gLineMM / 10#
+        gExtW = gLineW * 0.67
+    End If
+    If gArrowMM > 0 Then
+        gArrowL = gArrowMM / 10#
+        gArrowW = gArrowL * 0.34
+    End If
+    ' yozuv strelka va chiziq ustiga tushmasligi uchun
+    gLabelGap = Max2(gEm * 0.15, gArrowW + gLineW + gEm * 0.04)
 End Sub
 
 ' Avtomatik shrift: harflar balandligiga qarab. Kichik matnda raqamlar
@@ -1053,6 +1103,7 @@ Private Sub CreateLabels(lyr As Layer)
         Set s = lyr.CreateArtisticText(0, 0, FormatCm(gDim(i).Value), _
                                        Font:=gFontName, Size:=gPt, _
                                        Bold:=IIf(gBold, cdrTrue, cdrFalse))
+        ApplyLabelFont s
         s.Fill.ApplyUniformFill gColor
         s.Outline.SetNoOutline
         If gDim(i).Orient = 1 And gRotateVertical Then s.Rotate 90
@@ -1061,6 +1112,18 @@ Private Sub CreateLabels(lyr As Layer)
         gLabW(i) = w
         gLabH(i) = h
     Next i
+End Sub
+
+' Shrift, o'lcham va qalinlikni butun matnga aniq qo'llash
+' (ba'zi versiyalarda CreateArtisticText parametrlari to'liq qo'llanmaydi)
+Private Sub ApplyLabelFont(s As Shape)
+    Dim tr As Object
+    On Error Resume Next
+    Set tr = s.Text.Story
+    tr.Font = gFontName
+    tr.Size = gPt
+    tr.Bold = gBold
+    tr.Italic = False
 End Sub
 
 Private Sub PlaceAll(lyr As Layer, res As ShapeRange)
@@ -1450,6 +1513,10 @@ End Sub
 Private Sub LoadSettings()
     gFontPt = ParseNum(GetSetting(APP_KEY, SET_KEY, "FontPt", "0"))
     If gFontPt < 0 Or gFontPt > 3000 Then gFontPt = 0
+    gLineMM = ParseNum(GetSetting(APP_KEY, SET_KEY, "LineMM", "0"))
+    If gLineMM < 0 Or gLineMM > 50 Then gLineMM = 0
+    gArrowMM = ParseNum(GetSetting(APP_KEY, SET_KEY, "ArrowMM", "0"))
+    If gArrowMM < 0 Or gArrowMM > 500 Then gArrowMM = 0
     gFontName = GetSetting(APP_KEY, SET_KEY, "FontName", "Arial")
     If Trim$(gFontName) = "" Then gFontName = "Arial"
     gBold = (GetSetting(APP_KEY, SET_KEY, "Bold", "1") <> "0")
@@ -1465,6 +1532,8 @@ End Sub
 
 Private Sub SaveSettingsAll()
     SaveSetting APP_KEY, SET_KEY, "FontPt", FormatNum(gFontPt)
+    SaveSetting APP_KEY, SET_KEY, "LineMM", FormatNum(gLineMM)
+    SaveSetting APP_KEY, SET_KEY, "ArrowMM", FormatNum(gArrowMM)
     SaveSetting APP_KEY, SET_KEY, "FontName", gFontName
     SaveSetting APP_KEY, SET_KEY, "Bold", BoolStr(gBold)
     SaveSetting APP_KEY, SET_KEY, "Color", gColR & "," & gColG & "," & gColB
@@ -1486,6 +1555,467 @@ Private Function Ask(ByVal prompt As String, ByVal def As String, ByRef result A
 End Function
 
 '==============================================================================
+'  SOZLAMALAR OYNASI (to'q kulrang fon, oq yozuvlar)
+'==============================================================================
+
+' Oynani ko'rsatadi. False - oynani yaratib bo'lmadi (unda oddiy so'rovlar
+' ishlatiladi). action: "run" - saqlab o'lchash, "ok" - saqlash, "" - bekor.
+Private Function ShowSettingsForm(ByRef action As String) As Boolean
+    Dim f As Object, ok As Boolean
+    action = ""
+    If Not EnsureForm() Then Exit Function
+    On Error GoTo Failed
+    Set f = VBA.UserForms.Add(FORM_NAME)
+    f.Show
+    action = CStr(f.Tag)
+    ok = True
+Done:
+    On Error Resume Next
+    If Not f Is Nothing Then Unload f
+    ShowSettingsForm = ok
+    Exit Function
+Failed:
+    ok = False
+    Resume Done
+End Function
+
+' Oyna (UserForm) GlobalMacros loyihasida bo'lmasa - yaratadi, kodi eski
+' bo'lsa - yangilaydi
+Private Function EnsureForm() As Boolean
+    Dim vbp As Object, comp As Object, cm As Object, cur As Boolean
+    On Error GoTo Failed
+    Set vbp = MyProject()
+    If vbp Is Nothing Then Exit Function
+    Set comp = FindComponent(vbp, FORM_NAME)
+    If comp Is Nothing Then
+        Set comp = vbp.VBComponents.Add(3)      ' 3 = vbext_ct_MSForm
+        comp.Name = FORM_NAME
+    End If
+    Set cm = comp.CodeModule
+    If cm.CountOfLines > 0 Then cur = (InStr(1, cm.Lines(1, 1), FORM_TAG) > 0)
+    If Not cur Then
+        If cm.CountOfLines > 0 Then cm.DeleteLines 1, cm.CountOfLines
+        cm.AddFromString FormCode()
+    End If
+    EnsureForm = True
+    Exit Function
+Failed:
+    EnsureForm = False
+End Function
+
+' SizePlugin moduli joylashgan VBA loyihasi
+Private Function MyProject() As Object
+    Dim app As Object, p As Object
+    On Error Resume Next
+    Set app = Application
+    For Each p In app.VBE.VBProjects
+        If Not FindComponent(p, "SizePlugin") Is Nothing Then
+            Set MyProject = p
+            Exit Function
+        End If
+    Next p
+End Function
+
+Private Function FindComponent(p As Object, ByVal nm As String) As Object
+    On Error Resume Next
+    Set FindComponent = p.VBComponents(nm)
+End Function
+
+' Oynaning boshqaruv elementlari (oyna ochilganda chaqiriladi)
+Public Sub SizeFormBuild(f As Object)
+    Dim c As Object, y As Single
+    On Error GoTo Failed
+    LoadSettings
+
+    f.Caption = "Size - sozlamalar"
+    f.BackColor = ColBg()
+    f.Width = 352
+    f.Height = 446
+
+    y = 10
+    FHeading f, "RAQAMLAR", y
+    y = y + 24
+    FLabel f, "Shrift:", y
+    Set c = FInput(f, "Forms.ComboBox.1", "cboFont", 170, y, 162)
+    FillFonts c
+    c.Text = gFontName
+    y = y + 26
+    FCheck f, "chkBold", "Qalin (bold)", 170, y, 162, gBold
+    y = y + 24
+    FLabel f, "Shrift o'lchami (pt):", y
+    Set c = FInput(f, "Forms.TextBox.1", "txtFontPt", 170, y, 60)
+    If gFontPt > 0 Then c.Text = FormatNum(gFontPt) Else c.Text = "36"
+    FCheck f, "chkFontAuto", "Avto", 240, y, 92, (gFontPt <= 0)
+
+    y = y + 34
+    FHeading f, "CHIZIQLAR", y
+    y = y + 24
+    FLabel f, "Chiziq qalinligi (mm):", y
+    Set c = FInput(f, "Forms.TextBox.1", "txtLine", 170, y, 60)
+    If gLineMM > 0 Then c.Text = FormatNum(gLineMM) Else c.Text = "0.5"
+    FCheck f, "chkLineAuto", "Avto", 240, y, 92, (gLineMM <= 0)
+    y = y + 26
+    FLabel f, "Strelka uzunligi (mm):", y
+    Set c = FInput(f, "Forms.TextBox.1", "txtArrow", 170, y, 60)
+    If gArrowMM > 0 Then c.Text = FormatNum(gArrowMM) Else c.Text = "5"
+    FCheck f, "chkArrowAuto", "Avto", 240, y, 92, (gArrowMM <= 0)
+    y = y + 26
+    FLabel f, "Rang (R,G,B):", y
+    Set c = FInput(f, "Forms.TextBox.1", "txtColor", 170, y, 76)
+    c.Text = gColR & "," & gColG & "," & gColB
+    Set c = f.Controls.Add("Forms.Label.1", "lblSwatch", True)
+    c.Left = 251: c.Top = y + 2: c.Width = 18: c.Height = 16
+    c.BackStyle = 1
+    c.BorderStyle = 1
+    c.BorderColor = ColBorder()
+    Set c = FButton(f, "btnColor", "Tanlash", 274, y - 1, 58, False)
+
+    y = y + 34
+    FHeading f, "O'LCHASH", y
+    y = y + 24
+    FCheck f, "chkSplit", "Harflarni alohida aniqlash (matn ichida ham)", 14, y, 318, gSplitText
+    y = y + 22
+    FCheck f, "chkItems", "Har bir harfning eni va bo'yi", 14, y, 318, gShowItems
+    y = y + 22
+    FCheck f, "chkOverall", "Umumiy eni va bo'yi", 14, y, 318, gShowOverall
+    y = y + 22
+    FCheck f, "chkOutline", "Kontur (outline) qalinligini hisobga olish", 14, y, 318, gUseOutline
+    y = y + 22
+    FCheck f, "chkRotate", "Bo'yi raqamini vertikal yozish", 14, y, 318, gRotateVertical
+
+    y = y + 36
+    FButton f, "btnRun", "Saqlash va o'lchash", 14, y, 136, True
+    FButton f, "btnOK", "Saqlash", 156, y, 84, False
+    FButton f, "btnCancel", "Bekor qilish", 246, y, 86, False
+
+    SizeFormSync f
+    Exit Sub
+Failed:
+    MsgBox "Size: sozlamalar oynasini tayyorlashda xatolik." & vbCr & Err.Description, vbExclamation, "Size"
+End Sub
+
+' "Avto" belgilanganda qiymat maydoni o'chadi; rang namunasi yangilanadi
+Public Sub SizeFormSync(f As Object)
+    Dim r As Long, g As Long, b As Long
+    On Error Resume Next
+    f.Controls("txtFontPt").Enabled = Not CBool(f.Controls("chkFontAuto").Value)
+    f.Controls("txtLine").Enabled = Not CBool(f.Controls("chkLineAuto").Value)
+    f.Controls("txtArrow").Enabled = Not CBool(f.Controls("chkArrowAuto").Value)
+    If ParseColor(f.Controls("txtColor").Text, r, g, b) Then
+        f.Controls("lblSwatch").BackColor = VBA.RGB(r, g, b)
+    End If
+End Sub
+
+' CorelDRAW'ning rang tanlash oynasi
+Public Sub SizeFormPickColor(f As Object)
+    Dim c As Object, r As Long, g As Long, b As Long
+    If Not ParseColor(f.Controls("txtColor").Text, r, g, b) Then
+        r = gColR: g = gColG: b = gColB
+    End If
+    On Error GoTo NoDialog
+    Set c = CreateRGBColor(r, g, b)
+    If c.UserAssign() Then
+        c.ConvertToRGB
+        f.Controls("txtColor").Text = c.RGBRed & "," & c.RGBGreen & "," & c.RGBBlue
+    End If
+    Exit Sub
+NoDialog:
+    MsgBox "Rang tanlash oynasini ochib bo'lmadi." & vbCr & _
+           "Rangni R,G,B ko'rinishida yozing, masalan: 0,90,200", vbInformation, "Size"
+End Sub
+
+' Oynadagi qiymatlarni tekshirib saqlaydi
+Public Function SizeFormSave(f As Object) As Boolean
+    Dim fontPt As Double, lineMM As Double, arrowMM As Double
+    Dim nm As String, r As Long, g As Long, b As Long
+    On Error GoTo Failed
+
+    If CBool(f.Controls("chkFontAuto").Value) Then
+        fontPt = 0
+    Else
+        fontPt = ParseNum(f.Controls("txtFontPt").Text)
+        If fontPt < 1 Or fontPt > 3000 Then
+            MsgBox "Shrift o'lchami 1 dan 3000 pt gacha bo'lishi kerak.", vbExclamation, "Size"
+            Exit Function
+        End If
+    End If
+    If CBool(f.Controls("chkLineAuto").Value) Then
+        lineMM = 0
+    Else
+        lineMM = ParseNum(f.Controls("txtLine").Text)
+        If lineMM < 0.01 Or lineMM > 50 Then
+            MsgBox "Chiziq qalinligi 0.01 dan 50 mm gacha bo'lishi kerak.", vbExclamation, "Size"
+            Exit Function
+        End If
+    End If
+    If CBool(f.Controls("chkArrowAuto").Value) Then
+        arrowMM = 0
+    Else
+        arrowMM = ParseNum(f.Controls("txtArrow").Text)
+        If arrowMM < 0.1 Or arrowMM > 500 Then
+            MsgBox "Strelka uzunligi 0.1 dan 500 mm gacha bo'lishi kerak.", vbExclamation, "Size"
+            Exit Function
+        End If
+    End If
+    If Not ParseColor(f.Controls("txtColor").Text, r, g, b) Then
+        MsgBox "Rang noto'g'ri kiritildi. Namuna: 0,90,200", vbExclamation, "Size"
+        Exit Function
+    End If
+    nm = Trim$(f.Controls("cboFont").Text)
+    If nm = "" Then nm = "Arial"
+
+    gFontPt = fontPt
+    gLineMM = lineMM
+    gArrowMM = arrowMM
+    gFontName = ResolveFont(nm)
+    gBold = CBool(f.Controls("chkBold").Value)
+    gColR = r: gColG = g: gColB = b
+    gSplitText = CBool(f.Controls("chkSplit").Value)
+    gShowItems = CBool(f.Controls("chkItems").Value)
+    gShowOverall = CBool(f.Controls("chkOverall").Value)
+    gUseOutline = CBool(f.Controls("chkOutline").Value)
+    gRotateVertical = CBool(f.Controls("chkRotate").Value)
+    SaveSettingsAll
+    SizeFormSave = True
+    Exit Function
+Failed:
+    MsgBox "Sozlamalarni saqlab bo'lmadi." & vbCr & Err.Description, vbExclamation, "Size"
+End Function
+
+' --- oyna elementlari ---
+
+Private Function ColBg() As Long
+    ColBg = VBA.RGB(45, 45, 48)          ' to'q kulrang fon
+End Function
+
+Private Function ColField() As Long
+    ColField = VBA.RGB(63, 63, 70)       ' kiritish maydonlari
+End Function
+
+Private Function ColBorder() As Long
+    ColBorder = VBA.RGB(104, 104, 112)
+End Function
+
+Private Function ColText() As Long
+    ColText = VBA.RGB(255, 255, 255)     ' oq yozuvlar
+End Function
+
+Private Function ColAccent() As Long
+    ColAccent = VBA.RGB(0, 122, 204)
+End Function
+
+Private Function ColButton() As Long
+    ColButton = VBA.RGB(78, 78, 84)
+End Function
+
+Private Sub FStyleFont(c As Object, ByVal bold As Boolean)
+    c.Font.Name = "Segoe UI"
+    c.Font.Size = 9
+    c.Font.Bold = bold
+End Sub
+
+Private Sub FHeading(f As Object, ByVal txt As String, ByVal y As Single)
+    Dim c As Object
+    Set c = f.Controls.Add("Forms.Label.1")
+    c.Left = 14: c.Top = y: c.Width = 318: c.Height = 16
+    c.Caption = txt
+    c.BackStyle = 0
+    c.ForeColor = ColText()
+    FStyleFont c, True
+    ' ajratuvchi chiziq
+    Set c = f.Controls.Add("Forms.Label.1")
+    c.Left = 14: c.Top = y + 17: c.Width = 318: c.Height = 1
+    c.Caption = ""
+    c.BackStyle = 1
+    c.BackColor = ColBorder()
+End Sub
+
+Private Sub FLabel(f As Object, ByVal txt As String, ByVal y As Single)
+    Dim c As Object
+    Set c = f.Controls.Add("Forms.Label.1")
+    c.Left = 14: c.Top = y + 3: c.Width = 152: c.Height = 16
+    c.Caption = txt
+    c.BackStyle = 0
+    c.ForeColor = ColText()
+    FStyleFont c, False
+End Sub
+
+Private Function FInput(f As Object, ByVal progId As String, ByVal nm As String, _
+                        ByVal x As Single, ByVal y As Single, ByVal w As Single) As Object
+    Dim c As Object
+    Set c = f.Controls.Add(progId, nm, True)
+    c.Left = x: c.Top = y: c.Width = w: c.Height = 20
+    c.BackColor = ColField()
+    c.ForeColor = ColText()
+    c.SpecialEffect = 0                 ' tekis
+    c.BorderStyle = 1                   ' bitta chiziqli ramka
+    c.BorderColor = ColBorder()
+    FStyleFont c, False
+    Set FInput = c
+End Function
+
+Private Function FCheck(f As Object, ByVal nm As String, ByVal txt As String, ByVal x As Single, _
+                        ByVal y As Single, ByVal w As Single, ByVal checked As Boolean) As Object
+    Dim c As Object
+    Set c = f.Controls.Add("Forms.CheckBox.1", nm, True)
+    c.Left = x: c.Top = y: c.Width = w: c.Height = 20
+    c.Caption = txt
+    c.BackStyle = 0
+    c.ForeColor = ColText()
+    c.Value = checked
+    FStyleFont c, False
+    Set FCheck = c
+End Function
+
+Private Function FButton(f As Object, ByVal nm As String, ByVal txt As String, ByVal x As Single, _
+                         ByVal y As Single, ByVal w As Single, ByVal primary As Boolean) As Object
+    Dim c As Object
+    Set c = f.Controls.Add("Forms.CommandButton.1", nm, True)
+    c.Left = x: c.Top = y: c.Width = w: c.Height = 24
+    c.Caption = txt
+    If primary Then c.BackColor = ColAccent() Else c.BackColor = ColButton()
+    c.ForeColor = ColText()
+    FStyleFont c, primary
+    Set FButton = c
+End Function
+
+' O'rnatilgan shriftlar ro'yxati (alifbo tartibida)
+Private Sub FillFonts(cbo As Object)
+    Dim app As Object, fl As Object, arr() As String, n As Long, i As Long, j As Long
+    Dim t As String, prev As String
+    On Error Resume Next
+    Set app = Application
+    Set fl = app.FontList
+    n = 0
+    n = fl.Count
+    If n > 0 Then
+        ReDim arr(1 To n)
+        For i = 1 To n
+            arr(i) = CStr(fl(i))
+        Next i
+        For i = 2 To n
+            t = arr(i)
+            j = i - 1
+            Do While j >= 1
+                If StrComp(arr(j), t, vbTextCompare) <= 0 Then Exit Do
+                arr(j + 1) = arr(j)
+                j = j - 1
+            Loop
+            arr(j + 1) = t
+        Next i
+        For i = 1 To n
+            If arr(i) <> "" And StrComp(arr(i), prev, vbTextCompare) <> 0 Then cbo.AddItem arr(i)
+            prev = arr(i)
+        Next i
+    End If
+    If cbo.ListCount = 0 Then
+        cbo.AddItem "Arial"
+        cbo.AddItem "Arial Narrow"
+        cbo.AddItem "Calibri"
+        cbo.AddItem "Segoe UI"
+        cbo.AddItem "Tahoma"
+        cbo.AddItem "Times New Roman"
+        cbo.AddItem "Verdana"
+    End If
+End Sub
+
+' Shrift kompyuterda bormi; nomini to'g'ri yozilishi bilan qaytaradi.
+' Topilmasa - Arial.
+Private Function ResolveFont(ByVal nm As String) As String
+    Dim app As Object, fl As Object, n As Long, i As Long, s As String
+    ResolveFont = nm
+    On Error Resume Next
+    Set app = Application
+    Set fl = app.FontList
+    n = 0
+    n = fl.Count
+    If n <= 0 Then Exit Function          ' ro'yxatni o'qib bo'lmadi - boricha qoldiramiz
+    For i = 1 To n
+        s = CStr(fl(i))
+        If StrComp(s, nm, vbTextCompare) = 0 Then ResolveFont = s: Exit Function
+    Next i
+    ResolveFont = "Arial"
+End Function
+
+' Oyna (UserForm) moduli kodi. Oyna CorelDRAW ichida birinchi marta ochilganda
+' VBA muharriri orqali yaratiladi (.frx ikkilik faylisiz).
+Private Function FormCode() As String
+    Dim s As String
+    s = s & "' " & FORM_TAG & " - bu oyna Size plagini tomonidan avtomatik yaratilgan." & vbCrLf
+    s = s & "' Uni o'zgartirmang: SizePlugin moduli yangilanganda kod qayta yoziladi." & vbCrLf
+    s = s & "Option Explicit" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private WithEvents mOK As MSForms.CommandButton" & vbCrLf
+    s = s & "Private WithEvents mRun As MSForms.CommandButton" & vbCrLf
+    s = s & "Private WithEvents mCancel As MSForms.CommandButton" & vbCrLf
+    s = s & "Private WithEvents mColor As MSForms.CommandButton" & vbCrLf
+    s = s & "Private WithEvents mFontAuto As MSForms.CheckBox" & vbCrLf
+    s = s & "Private WithEvents mLineAuto As MSForms.CheckBox" & vbCrLf
+    s = s & "Private WithEvents mArrowAuto As MSForms.CheckBox" & vbCrLf
+    s = s & "Private WithEvents mColorTxt As MSForms.TextBox" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub UserForm_Initialize()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormBuild Me" & vbCrLf
+    s = s & "    Set mOK = Me.Controls(""btnOK"")" & vbCrLf
+    s = s & "    Set mRun = Me.Controls(""btnRun"")" & vbCrLf
+    s = s & "    Set mCancel = Me.Controls(""btnCancel"")" & vbCrLf
+    s = s & "    Set mColor = Me.Controls(""btnColor"")" & vbCrLf
+    s = s & "    Set mFontAuto = Me.Controls(""chkFontAuto"")" & vbCrLf
+    s = s & "    Set mLineAuto = Me.Controls(""chkLineAuto"")" & vbCrLf
+    s = s & "    Set mArrowAuto = Me.Controls(""chkArrowAuto"")" & vbCrLf
+    s = s & "    Set mColorTxt = Me.Controls(""txtColor"")" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mOK_Click()" & vbCrLf
+    s = s & "    If SizePlugin.SizeFormSave(Me) Then" & vbCrLf
+    s = s & "        Me.Tag = ""ok""" & vbCrLf
+    s = s & "        Me.Hide" & vbCrLf
+    s = s & "    End If" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mRun_Click()" & vbCrLf
+    s = s & "    If SizePlugin.SizeFormSave(Me) Then" & vbCrLf
+    s = s & "        Me.Tag = ""run""" & vbCrLf
+    s = s & "        Me.Hide" & vbCrLf
+    s = s & "    End If" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mCancel_Click()" & vbCrLf
+    s = s & "    Me.Tag = """"" & vbCrLf
+    s = s & "    Me.Hide" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mColor_Click()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormPickColor Me" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mFontAuto_Click()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormSync Me" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mLineAuto_Click()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormSync Me" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mArrowAuto_Click()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormSync Me" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub mColorTxt_Change()" & vbCrLf
+    s = s & "    SizePlugin.SizeFormSync Me" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)" & vbCrLf
+    s = s & "    If CloseMode = 0 Then" & vbCrLf
+    s = s & "        Cancel = True" & vbCrLf
+    s = s & "        Me.Tag = """"" & vbCrLf
+    s = s & "        Me.Hide" & vbCrLf
+    s = s & "    End If" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    FormCode = s
+End Function
+
+'==============================================================================
 '  YORDAMCHI FUNKSIYALAR
 '==============================================================================
 
@@ -1498,7 +2028,10 @@ Private Function FormatCm(ByVal v As Double) As String
 End Function
 
 Private Function FormatNum(ByVal v As Double) As String
-    FormatNum = Trim$(Replace(Str$(v), ",", "."))
+    Dim t As String
+    t = Trim$(Replace(Str$(v), ",", "."))
+    If Left$(t, 1) = "." Then t = "0" & t           ' Str$(0.5) = " .5"
+    FormatNum = t
 End Function
 
 Private Function ParseNum(ByVal s As String) As Double

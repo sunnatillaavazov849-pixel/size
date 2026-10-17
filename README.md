@@ -66,8 +66,8 @@ biriktiring.
 | Makros         | Vazifasi |
 |----------------|----------|
 | `Size`         | Tanlangan obyektlarni o'lchaydi va o'lchamlarni chizadi. |
-| `SizeAsk`      | Avval raqamlarning shrift o'lchamini (pt) so'raydi, keyin o'lchaydi. Kiritilgan qiymat eslab qolinadi. |
-| `SizeSettings` | Barcha sozlamalarni ketma-ket so'raydi va saqlaydi. |
+| `SizeAsk`      | Sozlamalar oynasini ochadi. **Saqlash va o'lchash** bosilsa, tanlangan obyektlarni darhol o'lchaydi. |
+| `SizeSettings` | Sozlamalar oynasi (pastga qarang). |
 | `SizeClear`    | Joriy sahifadagi barcha Size o'lchamlarini (qatlami bilan birga) o'chiradi. |
 
 Har bir `Size` ishga tushishi bitta qadam sifatida yoziladi, shuning uchun
@@ -76,22 +76,34 @@ Har bir `Size` ishga tushishi bitta qadam sifatida yoziladi, shuning uchun
 mumkin. Qayta ishga tushirilganda yangi o'lchamlar oldingi o'lchamlar
 ustiga tushmaydi.
 
-## Sozlamalar (`SizeSettings`)
+## Sozlamalar oynasi (`SizeSettings`)
 
-| Sozlama | Standart qiymat | Izoh |
-|---------|-----------------|------|
-| Shrift o'lchami (pt) | `0` | `0` bo'lsa avtomatik tanlanadi (pastga qarang). Istalgan qiymatni qo'lda berish mumkin, masalan `48`. |
-| Shrift nomi | `Arial` | Kompyuterda o'rnatilgan istalgan shrift. |
-| Qalin raqamlar | `1` | `1` — qalin (bold), `0` — oddiy. |
-| Rang | `0,90,200` | O'lcham chiziqlari, strelkalar va raqamlarning RGB rangi. |
-| Harflarga ajratish | `1` | `1` bo'lsa matn, egri chiziqqa aylantirilgan yozuv yoki guruh harflarga ajratiladi va har bir harf alohida o'lchanadi. `0` bo'lsa har bir tanlangan obyekt butunligicha o'lchanadi. |
-| Umumiy o'lcham | `1` | Butun tanlovning umumiy eni va bo'yi. |
-| Har bir harfning eni va bo'yi | `1` | `0` bo'lsa faqat oraliqlar va umumiy o'lcham ko'rsatiladi. Uzun yozuvlarda chizma ancha ixcham bo'ladi. |
-| Kontur qalinligi | `0` | `1` bo'lsa obyekt konturining (outline) qalinligi ham o'lchamga qo'shiladi. |
-| Vertikal yozuv | `1` | `1` — bo'yi raqamlari 90° burilib, o'lcham chizig'i bo'ylab yoziladi (ixcham). `0` — gorizontal yoziladi. |
+Oyna to'q kulrang fonda, yozuvlari oq. Unda quyidagilar bor:
 
-Sozlamalar Windows reyestrida saqlanadi va CorelDRAW qayta ochilganda ham
-saqlanib qoladi.
+| Bo'lim | Sozlama | Standart qiymat | Izoh |
+|--------|---------|-----------------|------|
+| Raqamlar | Shrift | `Arial` | Kompyuterga o'rnatilgan shriftlar ro'yxatidan tanlanadi. Ro'yxatda yo'q shrift yozilsa, Arial ishlatiladi. |
+| | Qalin (bold) | yoqilgan | |
+| | Shrift o'lchami (pt) | Avto | **Avto** belgisini olib tashlang va o'lchamni yozing, masalan `48`. |
+| Chiziqlar | Chiziq qalinligi (mm) | Avto | O'lcham chizig'ining qalinligi. Yordamchi chiziqlar undan biroz ingichka (2/3) bo'ladi. |
+| | Strelka uzunligi (mm) | Avto | Strelka eni uzunligiga mos ravishda o'zgaradi. |
+| | Rang (R,G,B) | `0,90,200` | Chiziqlar, strelkalar va raqamlar rangi. **Tanlash** tugmasi CorelDRAW'ning rang tanlash oynasini ochadi. |
+| O'lchash | Harflarni alohida aniqlash | yoqilgan | Matn, egri chiziqqa aylantirilgan yozuv yoki guruh harflarga ajratiladi. O'chirilsa, har bir obyekt butunligicha o'lchanadi. |
+| | Har bir harfning eni va bo'yi | yoqilgan | O'chirilsa, faqat oraliqlar va umumiy o'lcham ko'rsatiladi. Uzun yozuvlarda chizma ancha ixcham bo'ladi. |
+| | Umumiy eni va bo'yi | yoqilgan | Butun tanlovning umumiy o'lchami. |
+| | Kontur qalinligini hisobga olish | o'chirilgan | Obyekt konturining (outline) qalinligi o'lchamga qo'shiladi. |
+| | Bo'yi raqamini vertikal yozish | yoqilgan | O'chirilsa, bo'yi raqamlari gorizontal yoziladi. |
+
+Tugmalar: **Saqlash va o'lchash**, **Saqlash**, **Bekor qilish**. Sozlamalar
+Windows reyestrida saqlanadi va CorelDRAW qayta ochilganda ham saqlanib
+qoladi.
+
+Oyna birinchi marta ochilganda plagin uni `GlobalMacros` loyihasida
+`SizeSettingsForm` nomi bilan o'zi yaratadi. Uni o'chirmang va
+o'zgartirmang. CorelDRAW yopilayotganda `GlobalMacros` ni saqlashni so'rasa,
+**Ha** ni bosing. Agar oynani yaratib bo'lmasa (masalan, VBA loyihasi
+qulflangan bo'lsa), sozlamalar avvalgidek ketma-ket so'rov oynalari orqali
+so'raladi.
 
 ### Avtomatik shrift o'lchami
 
@@ -104,8 +116,8 @@ tanlanadi:
   balandligining ~13 % iga teng bo'ladi. Ular uzoqdan ham aniq ko'rinadi,
   lekin chizmani bosib ketmaydi.
 
-Chiziq qalinligi, strelkalar hajmi va masofalar ham shrift o'lchamiga mos
-ravishda kattalashadi yoki kichrayadi.
+Chiziq qalinligi va strelka o'lchami **Avto** bo'lsa, ular ham masofalar
+kabi shrift o'lchamiga mos ravishda kattalashadi yoki kichrayadi.
 
 ## Qanday ishlaydi
 
