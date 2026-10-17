@@ -37,6 +37,20 @@ Private Type TBox
     T As Double
 End Type
 
+' Obyektning eng chetki nuqtalari: o'ng / chap chekka qaysi balandlik oralig'ida
+' (RLo..RHi, LLo..LHi), yuqori / pastki chekka qaysi gorizontal oraliqda
+' (TLo..THi, BLo..BHi) joylashgan
+Private Type TExt
+    RLo As Double
+    RHi As Double
+    LLo As Double
+    LHi As Double
+    TLo As Double
+    THi As Double
+    BLo As Double
+    BHi As Double
+End Type
+
 ' Bitta o'lcham. "A" - o'lchanayotgan o'q (gorizontal o'lchamda X, vertikalda Y),
 ' "P" - unga perpendikulyar o'q.
 Private Type TDim
@@ -47,6 +61,12 @@ Private Type TDim
     P1Hi As Double
     P2Lo As Double          ' A2 uchidagi obyektning P o'qi bo'yicha chegaralari
     P2Hi As Double
+    S1Lo As Double          ' A1 uchidagi yordamchi chiziq boshlanadigan chetki nuqta
+    S1Hi As Double          ' (past/chap va yuqori/o'ng tomon uchun)
+    S2Lo As Double          ' A2 uchidagi chetki nuqta
+    S2Hi As Double
+    I1 As Long              ' A1 va A2 uchlaridagi obyektlar (-1 = umumiy o'lcham)
+    I2 As Long
     HasInside As Boolean    ' o'lchamni oraliqning ichiga qo'yish mumkinmi
     InLo As Double
     InHi As Double
@@ -82,6 +102,7 @@ Private gColG As Long
 Private gColB As Long
 Private gSplitText As Boolean       ' matn obyektini harflarga ajratib o'lchash
 Private gShowOverall As Boolean     ' butun tanlovning umumiy o'lchami
+Private gShowItems As Boolean       ' har bir obyekt / harfning eni va bo'yi
 Private gUseOutline As Boolean      ' kontur qalinligini hisobga olish
 Private gRotateVertical As Boolean  ' bo'yi yozuvini 90 gradusga burish
 
@@ -100,9 +121,15 @@ Private gLabelGap As Double
 Private gPad As Double
 Private gColor As Color
 
-' --- O'lchanadigan obyektlar ---
+' --- O'lchanadigan obyektlar (harflar) ---
 Private gItem() As TBox
+Private gItemE() As TExt
 Private gItemN As Long
+
+' --- Harflarga ajratishdagi bo'laklar (konturlar) ---
+Private gPc() As TBox
+Private gPcE() As TExt
+Private gPcN As Long
 
 ' --- Joylashtirilgan elementlar (to'qnashuvni tekshirish uchun) ---
 Private gEl() As TBox
@@ -156,7 +183,7 @@ Public Sub SizeSettings()
     Dim r As String, v As Double
     Dim fontPt As Double, fontName As String, bold As Boolean
     Dim cr As Long, cg As Long, cb As Long
-    Dim splitTxt As Boolean, overall As Boolean, useOut As Boolean, rotV As Boolean
+    Dim splitTxt As Boolean, overall As Boolean, items As Boolean, useOut As Boolean, rotV As Boolean
 
     LoadSettings
 
@@ -184,14 +211,18 @@ Public Sub SizeSettings()
         Exit Sub
     End If
 
-    If Not Ask("Matn obyektini harflarga ajratib o'lchash?" & vbCr & _
-               "1 = ha (har bir harf alohida), 0 = yo'q (matn bitta obyekt)", _
+    If Not Ask("Matn va egri chiziqqa aylantirilgan yozuvni harflarga ajratib o'lchash?" & vbCr & _
+               "1 = ha (har bir harf alohida), 0 = yo'q (har bir obyekt butunligicha)", _
                BoolStr(gSplitText), r) Then Exit Sub
     splitTxt = (ParseNum(r) <> 0)
 
     If Not Ask("Bir nechta obyekt tanlanganda umumiy (tashqi) o'lchamni ham ko'rsatish?" & vbCr & _
                "1 = ha, 0 = yo'q", BoolStr(gShowOverall), r) Then Exit Sub
     overall = (ParseNum(r) <> 0)
+
+    If Not Ask("Har bir harf / obyektning enini va bo'yini ko'rsatish?" & vbCr & _
+               "1 = ha, 0 = yo'q (faqat oraliqlar va umumiy o'lcham)", BoolStr(gShowItems), r) Then Exit Sub
+    items = (ParseNum(r) <> 0)
 
     If Not Ask("Kontur (outline) qalinligini o'lchamga qo'shish?" & vbCr & _
                "1 = ha, 0 = yo'q (faqat shaklning o'zi)", BoolStr(gUseOutline), r) Then Exit Sub
@@ -207,6 +238,7 @@ Public Sub SizeSettings()
     gColR = cr: gColG = cg: gColB = cb
     gSplitText = splitTxt
     gShowOverall = overall
+    gShowItems = items
     gUseOutline = useOut
     gRotateVertical = rotV
     SaveSettingsAll
@@ -314,10 +346,11 @@ Private Sub CollectItems(sel As ShapeRange)
     Dim s As Shape
     gItemN = 0
     ReDim gItem(0 To 31)
+    ReDim gItemE(0 To 31)
     For Each s In sel
         If Not IsSizeShape(s) Then
-            If gSplitText And s.Type = cdrTextShape Then
-                AddTextLetters s
+            If gSplitText Then
+                AddSplitShape s
             Else
                 AddShapeBox s
             End If
@@ -331,114 +364,281 @@ Private Function IsSizeShape(s As Shape) As Boolean
     IsSizeShape = (s.Layer.Name = LAYER_NAME)
 End Function
 
-Private Sub AddShapeBox(s As Shape)
-    Dim x As Double, y As Double, w As Double, h As Double, b As TBox
+Private Function ShapeBox(s As Shape) As TBox
+    Dim x As Double, y As Double, w As Double, h As Double
     s.GetBoundingBox x, y, w, h, gUseOutline
-    b = MkBox(x, y, x + w, y + h)
-    AddItem b
+    ShapeBox = MkBox(x, y, x + w, y + h)
+End Function
+
+Private Sub AddShapeBox(s As Shape)
+    Dim b As TBox, e As TExt
+    b = ShapeBox(s)
+    e = FullExt(b)
+    AddItem b, e
 End Sub
 
-Private Sub AddItem(b As TBox)
-    If gItemN > UBound(gItem) Then ReDim Preserve gItem(0 To gItemN * 2 + 16)
+Private Sub AddItem(b As TBox, e As TExt)
+    If gItemN > UBound(gItem) Then
+        ReDim Preserve gItem(0 To gItemN * 2 + 16)
+        ReDim Preserve gItemE(0 To gItemN * 2 + 16)
+    End If
     gItem(gItemN) = b
+    gItemE(gItemN) = e
     gItemN = gItemN + 1
 End Sub
 
-' Matn obyektini harflarga ajratib o'lchash. Matnning nusxasi egri chiziqqa
-' aylantiriladi, bo'laklarga ajratiladi, bo'laklar harflarga birlashtiriladi
-' (masalan "i" nuqtasi, "O" ichidagi teshik) va nusxa o'chiriladi.
-Private Sub AddTextLetters(s As Shape)
-    Dim pb() As TBox, n As Long, i As Long, nChars As Long
-    Dim txt As String
-
-    On Error Resume Next
-    txt = s.Text.Story.Text
-    On Error GoTo 0
-    nChars = VisibleCharCount(txt)
-
-    If nChars <= 0 Then
+' Obyektni harflarga ajratib o'lchash. Matn, egri chiziq (masalan, egri chiziqqa
+' aylantirilgan va birlashtirilgan yozuv) yoki guruhning har bir konturi
+' (subpath) alohida o'lchanadi, so'ng konturlar harflarga yig'iladi:
+' "O" ichidagi teshik, "i" nuqtasi, "O'" ustidagi belgilar harfning o'ziga
+' qo'shiladi. Asl obyektga tegilmaydi.
+Private Sub AddSplitShape(s As Shape)
+    Dim i As Long, nChars As Long, allText As Boolean
+    gPcN = 0
+    ReDim gPc(0 To 63)
+    ReDim gPcE(0 To 63)
+    allText = True
+    CollectPieces s, nChars, allText
+    If gPcN = 0 Then
         AddShapeBox s
         Exit Sub
     End If
-    If Not ExplodeText(s, pb, n) Then
-        AddShapeBox s
-        Exit Sub
-    End If
-
-    ClusterPieces pb, n, nChars
-    For i = 0 To n - 1
-        AddItem pb(i)
+    ' harflar sonini faqat sof matn uchun bilamiz
+    If Not allText Then nChars = 0
+    ClusterPieces nChars
+    For i = 0 To gPcN - 1
+        AddItem gPc(i), gPcE(i)
     Next i
 End Sub
 
-Private Function ExplodeText(s As Shape, pb() As TBox, n As Long) As Boolean
-    Dim dup As Shape, tmp As ShapeRange, pieces As ShapeRange, p As Shape
-    Dim x As Double, y As Double, w As Double, h As Double, i As Long
+Private Sub CollectPieces(s As Shape, nChars As Long, allText As Boolean)
+    Dim ch As Shape, n0 As Long, txt As String, b As TBox, e As TExt
+    If s.Type = cdrGroupShape Then
+        For Each ch In s.Shapes
+            CollectPieces ch, nChars, allText
+        Next ch
+        Exit Sub
+    End If
 
+    If s.Type = cdrTextShape Then
+        On Error Resume Next
+        txt = s.Text.Story.Text
+        On Error GoTo 0
+        nChars = nChars + VisibleCharCount(txt)
+    Else
+        allText = False
+    End If
+
+    n0 = gPcN
+    If Not AddCurvePieces(s) Then
+        ' konturlarni o'qib bo'lmadi - butun obyekt bitta bo'lak
+        gPcN = n0
+        b = ShapeBox(s)
+        e = FullExt(b)
+        AddPiece b, e
+    End If
+End Sub
+
+Private Function AddCurvePieces(s As Shape) As Boolean
+    Dim crv As Curve
+    Set crv = GetShapeCurve(s)
+    If Not crv Is Nothing Then
+        AddCurvePieces = PiecesFromCurve(crv, s)
+    ElseIf s.Type = cdrTextShape Then
+        AddCurvePieces = PiecesFromConvertedCopy(s)
+    End If
+End Function
+
+' Shaklning ko'rinadigan konturi. Matn uchun ham ishlaydi (DisplayCurve),
+' matnni egri chiziqqa aylantirish shart emas.
+Private Function GetShapeCurve(s As Shape) As Curve
+    Dim o As Object, c As Curve
+    On Error Resume Next
+    If s.Type = cdrCurveShape Then Set c = s.Curve
+    If c Is Nothing Then
+        Set o = s
+        Set c = o.DisplayCurve
+    End If
+    If Not c Is Nothing Then
+        If c.SubPaths.Count = 0 Then Set c = Nothing
+    End If
+    If Err.Number <> 0 Then Set c = Nothing
+    Err.Clear
+    On Error GoTo 0
+    Set GetShapeCurve = c
+End Function
+
+Private Function PiecesFromCurve(crv As Curve, s As Shape) As Boolean
+    Dim sp As SubPath, b As TBox, e As TExt, ow As Double, n0 As Long
+    n0 = gPcN
+    If gUseOutline Then ow = OutlineHalf(s)
+    On Error GoTo Failed
+    For Each sp In crv.SubPaths
+        If SubPathBox(sp, b, e) Then
+            If ow > 0 Then
+                b.L = b.L - ow: b.R = b.R + ow
+                b.B = b.B - ow: b.T = b.T + ow
+            End If
+            AddPiece b, e
+        End If
+    Next sp
+    PiecesFromCurve = (gPcN > n0)
+    Exit Function
+Failed:
+    gPcN = n0
+    PiecesFromCurve = False
+End Function
+
+' Matnning konturini o'qib bo'lmasa: vaqtinchalik nusxa egri chiziqqa
+' aylantiriladi, o'lchanadi va o'chiriladi.
+Private Function PiecesFromConvertedCopy(s As Shape) As Boolean
+    Dim dup As Shape, ch As Shape, crv As Curve, ok As Boolean
     On Error GoTo Failed
     Set dup = s.Duplicate
     dup.ConvertToCurves
-
-    Set tmp = CreateShapeRange
     If dup.Type = cdrGroupShape Then
-        tmp.AddRange dup.UngroupAllEx
-    Else
-        tmp.Add dup
-    End If
-
-    Set pieces = CreateShapeRange
-    For Each p In tmp
-        If p.Type = cdrCurveShape Then
-            If p.Curve.SubPaths.Count > 1 Then
-                pieces.AddRange p.BreakApartEx
-            Else
-                pieces.Add p
+        For Each ch In dup.Shapes
+            Set crv = GetShapeCurve(ch)
+            If Not crv Is Nothing Then
+                If PiecesFromCurve(crv, s) Then ok = True
             End If
-        Else
-            pieces.Add p
-        End If
-    Next p
-
-    n = pieces.Count
-    If n > 0 Then
-        ReDim pb(0 To n - 1)
-        i = 0
-        For Each p In pieces
-            p.GetBoundingBox x, y, w, h, gUseOutline
-            pb(i) = MkBox(x, y, x + w, y + h)
-            i = i + 1
-        Next p
-        ExplodeText = True
+        Next ch
+    Else
+        Set crv = GetShapeCurve(dup)
+        If Not crv Is Nothing Then ok = PiecesFromCurve(crv, s)
     End If
-
 CleanUp:
-    ' vaqtinchalik nusxalarni o'chirish (birma-bir, xatolarga e'tibor bermay)
     On Error Resume Next
-    DeleteAll pieces
-    DeleteAll tmp
     If Not dup Is Nothing Then dup.Delete
+    PiecesFromConvertedCopy = ok
     Exit Function
-
 Failed:
-    ExplodeText = False
+    ok = False
     Resume CleanUp
 End Function
 
-Private Sub DeleteAll(sr As ShapeRange)
-    Dim i As Long
-    On Error Resume Next
-    If sr Is Nothing Then Exit Sub
-    For i = sr.Count To 1 Step -1
-        sr(i).Delete
+' Bitta kontur: chegaralari va eng chetki nuqtalari (qaysi balandlikda harf
+' eng o'ngga / chapga, qaysi joyda eng tepaga / pastga chiqib turgani)
+Private Function SubPathBox(sp As SubPath, b As TBox, e As TExt) As Boolean
+    Dim nd As Node, n As Long, i As Long, px() As Double, py() As Double
+    Dim x As Double, y As Double, w As Double, h As Double, o As Object, tol As Double
+    Dim xb As TBox
+
+    n = sp.Nodes.Count
+    If n = 0 Then Exit Function
+    ReDim px(0 To n - 1)
+    ReDim py(0 To n - 1)
+    i = 0
+    For Each nd In sp.Nodes
+        px(i) = nd.PositionX
+        py(i) = nd.PositionY
+        i = i + 1
+    Next nd
+
+    b = MkBox(px(0), py(0), px(0), py(0))
+    For i = 1 To n - 1
+        If px(i) < b.L Then b.L = px(i)
+        If px(i) > b.R Then b.R = px(i)
+        If py(i) < b.B Then b.B = py(i)
+        If py(i) > b.T Then b.T = py(i)
     Next i
+
+    ' aniq chegaralar (egri segmentlarning bo'rtib chiqqan joylari bilan)
+    On Error Resume Next
+    Set o = sp
+    w = -1: h = -1
+    o.GetBoundingBox x, y, w, h
+    If Err.Number = 0 And w >= 0 And h >= 0 Then
+        xb = MkBox(x, y, x + w, y + h)
+        b = UnionBox(b, xb)
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    tol = Max2(b.R - b.L, b.T - b.B) * 0.01 + 0.0001
+    e.RLo = BIG: e.RHi = -BIG: e.LLo = BIG: e.LHi = -BIG
+    e.TLo = BIG: e.THi = -BIG: e.BLo = BIG: e.BHi = -BIG
+    For i = 0 To n - 1
+        If px(i) >= b.R - tol Then e.RLo = Min2(e.RLo, py(i)): e.RHi = Max2(e.RHi, py(i))
+        If px(i) <= b.L + tol Then e.LLo = Min2(e.LLo, py(i)): e.LHi = Max2(e.LHi, py(i))
+        If py(i) >= b.T - tol Then e.TLo = Min2(e.TLo, px(i)): e.THi = Max2(e.THi, px(i))
+        If py(i) <= b.B + tol Then e.BLo = Min2(e.BLo, px(i)): e.BHi = Max2(e.BHi, px(i))
+    Next i
+    If e.RLo > e.RHi Then e.RLo = b.B: e.RHi = b.T
+    If e.LLo > e.LHi Then e.LLo = b.B: e.LHi = b.T
+    If e.TLo > e.THi Then e.TLo = b.L: e.THi = b.R
+    If e.BLo > e.BHi Then e.BLo = b.L: e.BHi = b.R
+    SubPathBox = True
+End Function
+
+Private Function OutlineHalf(s As Shape) As Double
+    On Error Resume Next
+    If s.Outline.Type <> 0 Then OutlineHalf = s.Outline.Width / 2
+    If OutlineHalf < 0 Then OutlineHalf = 0
+End Function
+
+Private Sub AddPiece(b As TBox, e As TExt)
+    If gPcN > UBound(gPc) Then
+        ReDim Preserve gPc(0 To gPcN * 2 + 16)
+        ReDim Preserve gPcE(0 To gPcN * 2 + 16)
+    End If
+    gPc(gPcN) = b
+    gPcE(gPcN) = e
+    gPcN = gPcN + 1
 End Sub
 
-' Bo'laklarni harflarga birlashtirish
-Private Sub ClusterPieces(pb() As TBox, n As Long, ByVal nChars As Long)
-    Dim par() As Long, i As Long, j As Long, ri As Long, rj As Long
-    Dim cb() As TBox, nc As Long, idx() As Long
+' To'liq chekka (harfning eng chetki nuqtalari noma'lum bo'lsa)
+Private Function FullExt(b As TBox) As TExt
+    Dim e As TExt
+    e.RLo = b.B: e.RHi = b.T
+    e.LLo = b.B: e.LHi = b.T
+    e.TLo = b.L: e.THi = b.R
+    e.BLo = b.L: e.BHi = b.R
+    FullExt = e
+End Function
+
+' Ikki bo'lak birlashganda eng chetki nuqtalarni saqlab qolish
+Private Function MergeExt(a As TBox, ea As TExt, b As TBox, eb As TExt) As TExt
+    Dim r As TExt, tol As Double
+    tol = Max2(Max2(a.R - a.L, a.T - a.B), Max2(b.R - b.L, b.T - b.B)) * 0.01 + 0.0001
+    If a.R > b.R + tol Then
+        r.RLo = ea.RLo: r.RHi = ea.RHi
+    ElseIf b.R > a.R + tol Then
+        r.RLo = eb.RLo: r.RHi = eb.RHi
+    Else
+        r.RLo = Min2(ea.RLo, eb.RLo): r.RHi = Max2(ea.RHi, eb.RHi)
+    End If
+    If a.L < b.L - tol Then
+        r.LLo = ea.LLo: r.LHi = ea.LHi
+    ElseIf b.L < a.L - tol Then
+        r.LLo = eb.LLo: r.LHi = eb.LHi
+    Else
+        r.LLo = Min2(ea.LLo, eb.LLo): r.LHi = Max2(ea.LHi, eb.LHi)
+    End If
+    If a.T > b.T + tol Then
+        r.TLo = ea.TLo: r.THi = ea.THi
+    ElseIf b.T > a.T + tol Then
+        r.TLo = eb.TLo: r.THi = eb.THi
+    Else
+        r.TLo = Min2(ea.TLo, eb.TLo): r.THi = Max2(ea.THi, eb.THi)
+    End If
+    If a.B < b.B - tol Then
+        r.BLo = ea.BLo: r.BHi = ea.BHi
+    ElseIf b.B < a.B - tol Then
+        r.BLo = eb.BLo: r.BHi = eb.BHi
+    Else
+        r.BLo = Min2(ea.BLo, eb.BLo): r.BHi = Max2(ea.BHi, eb.BHi)
+    End If
+    MergeExt = r
+End Function
+
+' Bo'laklarni harflarga birlashtirish (gPc / gPcE ustida)
+Private Sub ClusterPieces(ByVal nChars As Long)
+    Dim par() As Long, i As Long, j As Long, ri As Long, rj As Long, n As Long
+    Dim cb() As TBox, ce() As TExt, nc As Long, idx() As Long
     Dim bi As Long, bj As Long, d As Double, best As Double
 
+    n = gPcN
     ReDim par(0 To n - 1)
     For i = 0 To n - 1
         par(i) = i
@@ -447,7 +647,7 @@ Private Sub ClusterPieces(pb() As TBox, n As Long, ByVal nChars As Long)
     ' bir harfga tegishli bo'laklar: gorizontal bo'yicha ustma-ust va yaqin
     For i = 0 To n - 2
         For j = i + 1 To n - 1
-            If PiecesBelong(pb(i), pb(j)) Then
+            If PiecesBelong(gPc(i), gPc(j)) Then
                 ri = FindRoot(par, i)
                 rj = FindRoot(par, j)
                 If ri <> rj Then par(rj) = ri
@@ -456,6 +656,7 @@ Private Sub ClusterPieces(pb() As TBox, n As Long, ByVal nChars As Long)
     Next i
 
     ReDim cb(0 To n - 1)
+    ReDim ce(0 To n - 1)
     ReDim idx(0 To n - 1)
     For i = 0 To n - 1
         idx(i) = -1
@@ -465,15 +666,18 @@ Private Sub ClusterPieces(pb() As TBox, n As Long, ByVal nChars As Long)
         ri = FindRoot(par, i)
         If idx(ri) < 0 Then
             idx(ri) = nc
-            cb(nc) = pb(i)
+            cb(nc) = gPc(i)
+            ce(nc) = gPcE(i)
             nc = nc + 1
         Else
-            cb(idx(ri)) = UnionBox(cb(idx(ri)), pb(i))
+            j = idx(ri)
+            ce(j) = MergeExt(cb(j), ce(j), gPc(i), gPcE(i))
+            cb(j) = UnionBox(cb(j), gPc(i))
         End If
     Next i
 
     ' bo'laklar soni harflar sonidan ko'p bo'lsa - eng yaqinlarini birlashtirish
-    Do While nc > nChars And nc > 1
+    Do While nChars > 0 And nc > nChars And nc > 1
         best = BIG
         bi = 0: bj = 1
         For i = 0 To nc - 2
@@ -482,16 +686,18 @@ Private Sub ClusterPieces(pb() As TBox, n As Long, ByVal nChars As Long)
                 If d < best Then best = d: bi = i: bj = j
             Next j
         Next i
+        ce(bi) = MergeExt(cb(bi), ce(bi), cb(bj), ce(bj))
         cb(bi) = UnionBox(cb(bi), cb(bj))
         cb(bj) = cb(nc - 1)
+        ce(bj) = ce(nc - 1)
         nc = nc - 1
     Loop
 
-    ReDim pb(0 To nc - 1)
     For i = 0 To nc - 1
-        pb(i) = cb(i)
+        gPc(i) = cb(i)
+        gPcE(i) = ce(i)
     Next i
-    n = nc
+    gPcN = nc
 End Sub
 
 Private Function PiecesBelong(a As TBox, b As TBox) As Boolean
@@ -533,16 +739,19 @@ Private Function VisibleCharCount(ByVal t As String) As Long
 End Function
 
 Private Sub SortItems()
-    Dim i As Long, j As Long, t As TBox
+    Dim i As Long, j As Long, t As TBox, te As TExt
     For i = 1 To gItemN - 1
         t = gItem(i)
+        te = gItemE(i)
         j = i - 1
         Do While j >= 0
             If Not ItemBefore(t, gItem(j)) Then Exit Do
             gItem(j + 1) = gItem(j)
+            gItemE(j + 1) = gItemE(j)
             j = j - 1
         Loop
         gItem(j + 1) = t
+        gItemE(j + 1) = te
     Next i
 End Sub
 
@@ -568,16 +777,21 @@ Private Sub BuildDims()
     n = gItemN
 
     ' 1) har bir obyektning eni (yuqorida)
-    For i = 0 To n - 1
-        With gItem(i)
-            If .R - .L > MIN_SIZE Then
-                d = NewDim(0, .L, .R, .B, .T, .B, .T)
-                d.CostHigh = 0
-                d.CostLow = 2
-                AddDim d
-            End If
-        End With
-    Next i
+    If gShowItems Or n = 1 Then
+        For i = 0 To n - 1
+            With gItem(i)
+                If .R - .L > MIN_SIZE Then
+                    d = NewDim(0, .L, .R, .B, .T, .B, .T)
+                    d.S1Lo = gItemE(i).LLo: d.S1Hi = gItemE(i).LHi
+                    d.S2Lo = gItemE(i).RLo: d.S2Hi = gItemE(i).RHi
+                    d.I1 = i: d.I2 = i
+                    d.CostHigh = 0
+                    d.CostLow = 2
+                    AddDim d
+                End If
+            End With
+        Next i
+    End If
 
     ' 2) qo'shni obyektlar orasidagi bo'shliqlar (bir-biriga qaragan chetlaridan)
     If n > 1 Then
@@ -619,22 +833,27 @@ Private Sub BuildDims()
     End If
 
     ' 3) har bir obyektning bo'yi (bo'sh joyi ko'p tomonda)
-    For i = 0 To n - 1
-        With gItem(i)
-            If .T - .B > MIN_SIZE Then
-                d = NewDim(1, .B, .T, .L, .R, .L, .R)
-                d.AllowSlide = True
-                fl = FreeSide(i, False)
-                fr = FreeSide(i, True)
-                If fr > fl Then
-                    d.CostHigh = 0: d.CostLow = 1
-                Else
-                    d.CostLow = 0: d.CostHigh = 1
+    If gShowItems Or n = 1 Then
+        For i = 0 To n - 1
+            With gItem(i)
+                If .T - .B > MIN_SIZE Then
+                    d = NewDim(1, .B, .T, .L, .R, .L, .R)
+                    d.S1Lo = gItemE(i).BLo: d.S1Hi = gItemE(i).BHi
+                    d.S2Lo = gItemE(i).TLo: d.S2Hi = gItemE(i).THi
+                    d.I1 = i: d.I2 = i
+                    d.AllowSlide = True
+                    fl = FreeSide(i, False)
+                    fr = FreeSide(i, True)
+                    If fr > fl Then
+                        d.CostHigh = 0: d.CostLow = 1
+                    Else
+                        d.CostLow = 0: d.CostHigh = 1
+                    End If
+                    AddDim d
                 End If
-                AddDim d
-            End If
-        End With
-    Next i
+            End With
+        Next i
+    End If
 
     ' 4) umumiy o'lcham (ixtiyoriy)
     If gShowOverall And n > 1 Then
@@ -659,6 +878,9 @@ Private Function NewDim(ByVal ori As Long, ByVal a1 As Double, ByVal a2 As Doubl
     d.A1 = a1: d.A2 = a2
     d.P1Lo = p1Lo: d.P1Hi = p1Hi
     d.P2Lo = p2Lo: d.P2Hi = p2Hi
+    d.S1Lo = p1Lo: d.S1Hi = p1Hi
+    d.S2Lo = p2Lo: d.S2Hi = p2Hi
+    d.I1 = -1: d.I2 = -1
     d.HasInside = False
     d.Value = a2 - a1
     NewDim = d
@@ -670,14 +892,19 @@ Private Sub AddDim(d As TDim)
     gDimN = gDimN + 1
 End Sub
 
-' i - chapda, j - o'ngda
+' i - chapda, j - o'ngda. Oraliq i ning eng o'ngga chiqqan nuqtasidan
+' j ning eng chapga chiqqan nuqtasigacha o'lchanadi.
 Private Sub AddGapH(ByVal i As Long, ByVal j As Long)
     Dim d As TDim, a As TBox, b As TBox
     a = gItem(i): b = gItem(j)
     d = NewDim(0, a.R, b.L, a.B, a.T, b.B, b.T)
-    d.InLo = Max2(a.B, b.B)
-    d.InHi = Min2(a.T, b.T)
-    d.HasInside = (d.InHi > d.InLo)
+    d.S1Lo = gItemE(i).RLo: d.S1Hi = gItemE(i).RHi
+    d.S2Lo = gItemE(j).LLo: d.S2Hi = gItemE(j).LHi
+    d.I1 = i: d.I2 = j
+    ' strelkalar ikkala harfning chetki nuqtasiga tegadigan balandlik
+    d.InLo = Max2(gItemE(i).RLo, gItemE(j).LLo)
+    d.InHi = Min2(gItemE(i).RHi, gItemE(j).LHi)
+    d.HasInside = (d.InHi >= d.InLo)
     d.CostInside = 0: d.CostLow = 1: d.CostHigh = 2
     AddDim d
 End Sub
@@ -687,9 +914,12 @@ Private Sub AddGapV(ByVal i As Long, ByVal j As Long)
     Dim d As TDim, a As TBox, b As TBox
     a = gItem(i): b = gItem(j)
     d = NewDim(1, a.T, b.B, a.L, a.R, b.L, b.R)
-    d.InLo = Max2(a.L, b.L)
-    d.InHi = Min2(a.R, b.R)
-    d.HasInside = (d.InHi > d.InLo)
+    d.S1Lo = gItemE(i).TLo: d.S1Hi = gItemE(i).THi
+    d.S2Lo = gItemE(j).BLo: d.S2Hi = gItemE(j).BHi
+    d.I1 = i: d.I2 = j
+    d.InLo = Max2(gItemE(i).TLo, gItemE(j).BLo)
+    d.InHi = Min2(gItemE(i).THi, gItemE(j).BHi)
+    d.HasInside = (d.InHi >= d.InLo)
     d.CostInside = 0: d.CostLow = 1: d.CostHigh = 2
     AddDim d
 End Sub
@@ -945,13 +1175,13 @@ Private Function MakeCand(d As TDim, ByVal di As Long, ByVal sd As Long, _
         Case 1      ' yuqorida / o'ngda
             c.Pos = Max2(d.P1Hi, d.P2Hi) + gOff0 + k * gStep
             c.HasExt = True
-            c.E1From = d.P1Hi + gGapExt: c.E1To = c.Pos + gOver
-            c.E2From = d.P2Hi + gGapExt: c.E2To = c.Pos + gOver
+            c.E1From = d.S1Hi + gGapExt: c.E1To = c.Pos + gOver
+            c.E2From = d.S2Hi + gGapExt: c.E2To = c.Pos + gOver
         Case 0      ' pastda / chapda
             c.Pos = Min2(d.P1Lo, d.P2Lo) - gOff0 - k * gStep
             c.HasExt = True
-            c.E1From = d.P1Lo - gGapExt: c.E1To = c.Pos - gOver
-            c.E2From = d.P2Lo - gGapExt: c.E2To = c.Pos - gOver
+            c.E1From = d.S1Lo - gGapExt: c.E1To = c.Pos - gOver
+            c.E2From = d.S2Lo - gGapExt: c.E2To = c.Pos - gOver
         Case Else   ' oraliqning ichida (yordamchi chiziqsiz)
             If Not d.HasInside Then Exit Function
             m = (d.InLo + d.InHi) / 2
@@ -960,7 +1190,9 @@ Private Function MakeCand(d As TDim, ByVal di As Long, ByVal sd As Long, _
             Else
                 c.Pos = m + ((k + 1) \ 2) * gStep
             End If
-            If c.Pos - gArrowW <= d.InLo Or c.Pos + gArrowW >= d.InHi Then Exit Function
+            ' strelkalar ikkala harfga tegib turishi kerak
+            If c.Pos < d.InLo - 0.000001 Or c.Pos > d.InHi + 0.000001 Then Exit Function
+            If k > 0 And d.InHi - d.InLo < gStep Then Exit Function
             c.HasExt = False
     End Select
 
@@ -1015,28 +1247,30 @@ Private Function MakeCand(d As TDim, ByVal di As Long, ByVal sd As Long, _
 End Function
 
 Private Function CandFree(d As TDim, c As TCand, ByVal lvl As Long) As Boolean
-    Dim bx As TBox, eo As Long
+    Dim bx As TBox
     bx = c.Lab
     bx.L = bx.L - gPad: bx.R = bx.R + gPad
     bx.B = bx.B - gPad: bx.T = bx.T + gPad
-    If Hits(bx, 1, lvl, 0, 0) Then Exit Function
+    If Hits(bx, 1, lvl, -1, -1) Then Exit Function
 
     bx = LineBox(d, c)
-    If Hits(bx, 2, lvl, 0, 0) Then Exit Function
+    If Hits(bx, 2, lvl, -1, -1) Then Exit Function
 
+    ' yordamchi chiziq o'z harfining chetki nuqtasidan boshlanadi, shuning uchun
+    ' shu harf to'siq hisoblanmaydi
     If c.HasExt Then
-        eo = 1 - d.Orient
         bx = ExtBox(d, d.A1, c.E1From, c.E1To)
-        If Hits(bx, 3, lvl, eo, d.A1) Then Exit Function
+        If Hits(bx, 3, lvl, d.I1, d.I2) Then Exit Function
         bx = ExtBox(d, d.A2, c.E2From, c.E2To)
-        If Hits(bx, 3, lvl, eo, d.A2) Then Exit Function
+        If Hits(bx, 3, lvl, d.I1, d.I2) Then Exit Function
     End If
     CandFree = True
 End Function
 
 ' kind: 1 = yozuv, 2 = o'lcham chizig'i, 3 = yordamchi chiziq
+' skip1, skip2 - tekshirilmaydigan obyektlar (yordamchi chiziqning o'z harflari)
 Private Function Hits(bx As TBox, ByVal kind As Long, ByVal lvl As Long, _
-                      ByVal extOr As Long, ByVal extC As Double) As Boolean
+                      ByVal skip1 As Long, ByVal skip2 As Long) As Boolean
     Dim i As Long, chk As Boolean
     ' obyektlar bilan
     Select Case kind
@@ -1046,7 +1280,9 @@ Private Function Hits(bx As TBox, ByVal kind As Long, ByVal lvl As Long, _
     End Select
     If chk Then
         For i = 0 To gItemN - 1
-            If Overlap(bx, gItem(i)) Then Hits = True: Exit Function
+            If i <> skip1 And i <> skip2 Then
+                If Overlap(bx, gItem(i)) Then Hits = True: Exit Function
+            End If
         Next i
     End If
     ' oldin chizilgan o'lchamlar bilan
@@ -1057,11 +1293,8 @@ Private Function Hits(bx As TBox, ByVal kind As Long, ByVal lvl As Long, _
             ElseIf gElKind(i) = 1 Then
                 If lvl < 4 Then Hits = True: Exit Function
             ElseIf lvl < 2 Then
-                ' bir to'g'ri chiziqda yotgan yordamchi chiziqlar ustma-ust tushishi mumkin
-                If Not (kind = 3 And gElKind(i) = 3 And gElOr(i) = extOr And _
-                        Abs(gElC(i) - extC) < gLineW) Then
-                    Hits = True: Exit Function
-                End If
+                ' yordamchi chiziqlar bir-birini kesib o'tishi mumkin
+                If Not (kind = 3 And gElKind(i) = 3) Then Hits = True: Exit Function
             End If
         End If
     Next i
@@ -1224,7 +1457,8 @@ Private Sub LoadSettings()
         gColR = 0: gColG = 90: gColB = 200
     End If
     gSplitText = (GetSetting(APP_KEY, SET_KEY, "SplitText", "1") <> "0")
-    gShowOverall = (GetSetting(APP_KEY, SET_KEY, "ShowOverall", "0") <> "0")
+    gShowOverall = (GetSetting(APP_KEY, SET_KEY, "ShowOverall", "1") <> "0")
+    gShowItems = (GetSetting(APP_KEY, SET_KEY, "ShowItems", "1") <> "0")
     gUseOutline = (GetSetting(APP_KEY, SET_KEY, "UseOutline", "0") <> "0")
     gRotateVertical = (GetSetting(APP_KEY, SET_KEY, "RotateVertical", "1") <> "0")
 End Sub
@@ -1236,6 +1470,7 @@ Private Sub SaveSettingsAll()
     SaveSetting APP_KEY, SET_KEY, "Color", gColR & "," & gColG & "," & gColB
     SaveSetting APP_KEY, SET_KEY, "SplitText", BoolStr(gSplitText)
     SaveSetting APP_KEY, SET_KEY, "ShowOverall", BoolStr(gShowOverall)
+    SaveSetting APP_KEY, SET_KEY, "ShowItems", BoolStr(gShowItems)
     SaveSetting APP_KEY, SET_KEY, "UseOutline", BoolStr(gUseOutline)
     SaveSetting APP_KEY, SET_KEY, "RotateVertical", BoolStr(gRotateVertical)
 End Sub
