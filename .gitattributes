@@ -1,0 +1,2 @@
+# VBA muharriri .bas fayllarni Windows (CRLF) qator oxirlari bilan import qiladi
+*.bas -text
