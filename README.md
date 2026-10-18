@@ -76,7 +76,7 @@ oynada:
    `GlobalMacros → SizePlugin.Size` ni ishga tushiring. Size oynasi ochiladi.
 2. Chizmada obyekt, harf yoki matnni tanlang. Oyna ochiq turaveradi.
 3. **O'lchash** tugmasini (yoki `Enter`) bosing. Natija oynaning pastki
-   qatorida yoziladi, masalan: `19 ta o'lcham chizildi (6 ta obyekt / harf)`.
+   qatorida chiqadi, masalan: `Tayyor: 19 ta o'lcham`.
 4. Boshqa obyektlarni tanlab, yana **O'lchash** ni bosish mumkin.
    **Tozalash** joriy sahifadagi barcha Size o'lchamlarini o'chiradi,
    **Yopish** oynani yopadi.
@@ -95,25 +95,32 @@ ustiga tushmaydi.
 
 ## Size oynasi
 
-Oyna to'q kulrang fonda, yozuvlari oq. Unda quyidagilar bor:
+Oyna minimalistik: och kulrang fon, oq kartalar, yumaloq burchaklar. Har bir
+maydon ustiga sichqoncha olib borilsa, qisqa izoh chiqadi.
 
-| Bo'lim | Sozlama | Standart qiymat | Izoh |
-|--------|---------|-----------------|------|
-| Raqamlar | Shrift | `Arial` | Kompyuterga o'rnatilgan shriftlar ro'yxatidan tanlanadi. Ro'yxatda yo'q shrift yozilsa, Arial ishlatiladi. |
-| | Qalin (bold) | yoqilgan | |
-| | Shrift o'lchami (pt) | Avto | **Avto** belgisini olib tashlang va o'lchamni yozing, masalan `48`. |
-| Chiziqlar | Chiziq qalinligi (mm) | Avto | O'lcham chizig'ining qalinligi. Yordamchi chiziqlar undan biroz ingichka (2/3) bo'ladi. |
-| | Strelka uzunligi (mm) | Avto | Strelka eni uzunligiga mos ravishda o'zgaradi. |
-| | Rang (R,G,B) | `0,90,200` | Chiziqlar, strelkalar va raqamlar rangi. **Tanlash** tugmasi CorelDRAW'ning rang tanlash oynasini ochadi. |
-| O'lchash | Harflarni alohida aniqlash | yoqilgan | Matn, egri chiziqqa aylantirilgan yozuv yoki guruh harflarga ajratiladi. O'chirilsa, har bir obyekt butunligicha o'lchanadi. |
-| | Har bir harfning eni va bo'yi | yoqilgan | O'chirilsa, faqat oraliqlar va umumiy o'lcham ko'rsatiladi. Uzun yozuvlarda chizma ancha ixcham bo'ladi. |
-| | Umumiy eni va bo'yi | yoqilgan | Butun tanlovning umumiy o'lchami. |
-| | Kontur qalinligini hisobga olish | o'chirilgan | Obyekt konturining (outline) qalinligi o'lchamga qo'shiladi. |
-| | Bo'yi raqamini vertikal yozish | yoqilgan | O'chirilsa, bo'yi raqamlari gorizontal yoziladi. |
+| Karta | Maydon | Standart | Vazifasi |
+|-------|--------|----------|----------|
+| Raqamlar | Shrift | `Arial` | O'rnatilgan shriftlar ro'yxatidan. Topilmasa — Arial. |
+| | Hajm, pt | Avto | `−` / `+` yoki qiymatni yozing. `−`/`+` bosilsa Avto o'chadi. |
+| | Qalin | yoqilgan | Qalin raqamlar. |
+| Chiziqlar | Qalinlik, mm | Avto | O'lcham chizig'i. Yordamchi chiziqlar 2/3 qalinlikda. |
+| | Strelka, mm | Avto | Strelka uzunligi. |
+| | Rang | `0,90,200` | R,G,B. **Tanlash** — CorelDRAW rang oynasi. |
+| Ko'rsatish | Harflarga ajratish | yoqilgan | Matn va egri chiziqdagi har bir harf alohida. |
+| | Eni va bo'yi | yoqilgan | Har bir harfning eni va bo'yi. |
+| | Umumiy o'lcham | yoqilgan | Butun tanlovning eni va bo'yi. |
+| | Kontur qalinligi | o'chirilgan | Kontur qalinligi o'lchamga qo'shiladi. |
+| | Vertikal raqam | yoqilgan | Bo'yi raqami 90° burilib yoziladi. |
 
-Tugmalar: **O'lchash**, **Tozalash**, **Yopish**. Sozlamalar **O'lchash**
-yoki **Yopish** bosilganda Windows reyestriga saqlanadi va CorelDRAW qayta
-ochilganda ham saqlanib qoladi.
+Tugmalar: **O'lchash** (yoki `Enter`), **Tozalash**, **Yopish**. Natija yoki
+xato tugmalar ostidagi qatorda chiqadi (`Tayyor: 19 ta o'lcham`,
+`Obyekt tanlanmagan.`). Sozlamalar **O'lchash** yoki **Yopish** bosilganda
+Windows reyestriga saqlanadi.
+
+Kartalar, maydonlar, tugmalar va almashtirgichlarning yumaloq fonlari kichik
+rasm sifatida chiziladi va `%TEMP%\SizeUI` papkasida saqlanadi. Shuning uchun
+oyna birinchi marta bir necha soniya kechroq ochilishi mumkin, keyingi
+safarlar darhol ochiladi.
 
 Agar `SizeForm` import qilinmagan bo'lsa, plagin oynani VBA muharriri orqali
 o'zi yaratishga urinadi (`SizeSettingsForm`). Bu ham bo'lmasa, `Size` oddiy

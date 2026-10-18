@@ -26,8 +26,8 @@ F_PREFIX = bytes.fromhex(
     + "Tahoma".encode("ascii").hex()
 )
 
-CLIENT_W_TW = 6800      # 340 pt
-CLIENT_H_TW = 9200      # 460 pt
+CLIENT_W_TW = 11760     # 588 pt
+CLIENT_H_TW = 6360      # 318 pt
 CLIENT_LEFT_TW = 120
 CLIENT_TOP_TW = 465
 
