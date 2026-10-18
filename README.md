@@ -118,9 +118,15 @@ xato tugmalar ostidagi qatorda chiqadi (`Tayyor: 19 ta o'lcham`,
 Windows reyestriga saqlanadi.
 
 Kartalar, maydonlar, tugmalar va almashtirgichlarning yumaloq fonlari kichik
-rasm sifatida chiziladi va `%TEMP%\SizeUI` papkasida saqlanadi. Shuning uchun
-oyna birinchi marta bir necha soniya kechroq ochilishi mumkin, keyingi
-safarlar darhol ochiladi.
+rasm sifatida chiziladi va `%TEMP%\SizeUI` papkasida saqlanadi (faqat birinchi
+marta). Shriftlar ro'yxati CorelDRAW sessiyasida bir marta, oyna ko'ringandan
+keyin o'qiladi. **Yopish** oynani yopmaydi, yashiradi, shuning uchun keyingi
+ochilishlar darhol bo'ladi.
+
+Agar CorelDRAW ochilgandan keyin *birinchi* makros har doim sekin ishga
+tushsa, bu CorelDRAW'ning VBA'ni kechiktirib yuklash sozlamasidan:
+*Tools → Options → Global → VBA → Delay load VBA*. Belgini olib tashlasangiz,
+makroslar darhol ishga tushadi, lekin CorelDRAW o'zi biroz sekinroq ochiladi.
 
 Agar `SizeForm` import qilinmagan bo'lsa, plagin oynani VBA muharriri orqali
 o'zi yaratishga urinadi (`SizeSettingsForm`). Bu ham bo'lmasa, `Size` oddiy

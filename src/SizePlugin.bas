@@ -179,6 +179,11 @@ Private gLab() As Shape
 Private gLabW() As Double
 Private gLabH() As Double
 
+' --- o'rnatilgan shriftlar (bir marta o'qiladi, alifbo tartibida) ---
+Private gFonts() As String
+Private gFontsN As Long
+Private gFontsOk As Boolean
+
 '==============================================================================
 '  OCHIQ MAKROSLAR
 '==============================================================================
@@ -1632,6 +1637,7 @@ Private Function ShowSizeWindow() As Boolean
     For Each f In VBA.UserForms
         If f.Name = FORM_FILE_NAME Or f.Name = FORM_NAME Then
             f.Show 0
+            FillFontsDeferred f
             ShowSizeWindow = True
             Exit Function
         End If
@@ -1643,6 +1649,7 @@ Private Function ShowSizeWindow() As Boolean
     End If
     If f Is Nothing Then Exit Function
     f.Show 0                            ' 0 = vbModeless
+    FillFontsDeferred f                 ' shriftlar ro'yxati oyna ko'ringandan keyin
     ShowSizeWindow = True
     Exit Function
 Failed:
@@ -1785,7 +1792,7 @@ Public Sub SizeFormBuild(f As Object)
     c.SpecialEffect = 0: c.BorderStyle = 0
     c.ShowDropButtonWhen = 2: c.DropButtonStyle = 1
     UiFont c, False, 9, CText()
-    FillFonts c
+    c.AddItem gFontName                 ' to'liq ro'yxat oyna ochilgandan keyin yuklanadi
     c.Text = gFontName
     y = y + UI_ROW + UI_RGAP
     UiRowLabel f, x, y, "Hajm, pt", "Raqamlar hajmi. Avto -- harflar balandligiga qarab"
@@ -2155,6 +2162,9 @@ Private Sub WriteShapeBmp(ByVal path As String, ByVal w As Long, ByVal h As Long
     Dim px As Double, py As Double, x0 As Double, y0 As Double, x1 As Double, y1 As Double
     Dim cr As Double, cg As Double, cb As Double, a As Double, d As Double, bw As Double
     Dim kx As Double, ky As Double, kr As Double, ppm As Long
+    Dim bgR As Double, bgG As Double, bgB As Double, fR As Byte, fG As Byte, fB As Byte
+    Dim bandY As Boolean, bandX0 As Double, bandX1 As Double, inX0 As Double, inX1 As Double
+    Dim inY0 As Double, inY1 As Double, bandYOk As Boolean
 
     rowLen = ((w * 3 + 3) \ 4) * 4
     ReDim buf(0 To 54 + rowLen * h - 1)
@@ -2185,10 +2195,24 @@ Private Sub WriteShapeBmp(ByVal path As String, ByVal w As Long, ByVal h As Long
         If knob > 0 Then kx = x1 - (y1 - y0) / 2 Else kx = x0 + (y1 - y0) / 2
     End If
 
+    ' tezlashtirish: shaklning ichki qismi bir xil rangda, faqat chetlar hisoblanadi
+    bgR = ColR(bg): bgG = ColG(bg): bgB = ColB(bg)
+    fR = CByte(ColR(fill)): fG = CByte(ColG(fill)): fB = CByte(ColB(fill))
+    inX0 = x0 + bw + 1.5: inX1 = x1 - bw - 1.5          ' to'g'ri chetlardan ichkari
+    inY0 = y0 + bw + 1.5: inY1 = y1 - bw - 1.5
+    bandX0 = x0 + r + 1: bandX1 = x1 - r - 1            ' burchaklardan tashqari
     For y = 0 To h - 1
+        py = y + 0.5
+        bandY = (knob = 0 And py > y0 + r + 1 And py < y1 - r - 1)
+        bandYOk = (knob = 0 And py > inY0 And py < inY1)
         For x = 0 To w - 1
-            px = x + 0.5: py = y + 0.5
-            cr = ColR(bg): cg = ColG(bg): cb = ColB(bg)
+            px = x + 0.5
+            i = 54 + (h - 1 - y) * rowLen + x * 3
+            If (bandY And px > inX0 And px < inX1) Or (bandYOk And px > bandX0 And px < bandX1) Then
+                buf(i) = fB: buf(i + 1) = fG: buf(i + 2) = fR
+                GoTo NextPixel
+            End If
+            cr = bgR: cg = bgG: cb = bgB
             If shadow Then
                 d = SdRoundRect(px, py - 1, x0, y0, x1, y1, r)
                 If d < 3 Then
@@ -2210,8 +2234,8 @@ Private Sub WriteShapeBmp(ByVal path As String, ByVal w As Long, ByVal h As Long
                 a = Clamp01(0.5 - d)
                 If a > 0 Then Blend cr, cg, cb, VBA.RGB(255, 255, 255), a
             End If
-            i = 54 + (h - 1 - y) * rowLen + x * 3
             buf(i) = CByte(Int(cb + 0.5)): buf(i + 1) = CByte(Int(cg + 0.5)): buf(i + 2) = CByte(Int(cr + 0.5))
+NextPixel:
         Next x
     Next y
 
@@ -2261,36 +2285,86 @@ Private Sub PutLong(b() As Byte, ByVal off As Long, ByVal v As Long)
     b(off + 3) = (v \ &H1000000) And &HFF&
 End Sub
 
-' O'rnatilgan shriftlar ro'yxati (alifbo tartibida)
-Private Sub FillFonts(cbo As Object)
-    Dim app As Object, fl As Object, arr() As String, n As Long, i As Long, j As Long
-    Dim tt As String, prev As String
+' Shriftlar ro'yxatini CorelDRAW'dan bir marta o'qiydi va saralaydi
+Private Sub LoadFontCache()
+    Dim app As Object, fl As Object, n As Long, i As Long, k As Long
+    If gFontsOk Then Exit Sub
+    gFontsOk = True
+    gFontsN = 0
     On Error Resume Next
     Set app = Application
     Set fl = app.FontList
     n = 0
     n = fl.Count
-    If n > 0 Then
-        ReDim arr(1 To n)
-        For i = 1 To n
-            arr(i) = CStr(fl(i))
-        Next i
-        For i = 2 To n
-            tt = arr(i)
-            j = i - 1
-            Do While j >= 1
-                If StrComp(arr(j), tt, vbTextCompare) <= 0 Then Exit Do
-                arr(j + 1) = arr(j)
+    If n <= 0 Then Exit Sub
+    ReDim gFonts(0 To n - 1)
+    For i = 1 To n
+        gFonts(gFontsN) = CStr(fl(i))
+        If Len(gFonts(gFontsN)) > 0 Then gFontsN = gFontsN + 1
+    Next i
+    If gFontsN = 0 Then Exit Sub
+    QuickSortStr gFonts, 0, gFontsN - 1
+    ' takrorlarni olib tashlash
+    k = 0
+    For i = 1 To gFontsN - 1
+        If StrComp(gFonts(i), gFonts(k), vbTextCompare) <> 0 Then
+            k = k + 1
+            gFonts(k) = gFonts(i)
+        End If
+    Next i
+    gFontsN = k + 1
+    ReDim Preserve gFonts(0 To gFontsN - 1)
+End Sub
+
+Private Sub QuickSortStr(a() As String, ByVal lo As Long, ByVal hi As Long)
+    Dim i As Long, j As Long, pv As String, tmp As String
+    Do While lo < hi
+        i = lo: j = hi
+        pv = a((lo + hi) \ 2)
+        Do While i <= j
+            Do While StrComp(a(i), pv, vbTextCompare) < 0
+                i = i + 1
+            Loop
+            Do While StrComp(a(j), pv, vbTextCompare) > 0
                 j = j - 1
             Loop
-            arr(j + 1) = tt
-        Next i
-        For i = 1 To n
-            If arr(i) <> "" And StrComp(arr(i), prev, vbTextCompare) <> 0 Then cbo.AddItem arr(i)
-            prev = arr(i)
-        Next i
-    End If
-    If cbo.ListCount = 0 Then
+            If i <= j Then
+                tmp = a(i): a(i) = a(j): a(j) = tmp
+                i = i + 1: j = j - 1
+            End If
+        Loop
+        ' kichik qism rekursiya bilan, kattasi sikl bilan
+        If j - lo < hi - i Then
+            If lo < j Then QuickSortStr a, lo, j
+            lo = i
+        Else
+            If i < hi Then QuickSortStr a, i, hi
+            hi = j
+        End If
+    Loop
+End Sub
+
+' Ro'yxat bo'sh bo'lsa (oyna endi ochilgan) - to'ldiradi
+Private Sub FillFontsDeferred(f As Object)
+    Dim cbo As Object
+    On Error Resume Next
+    Set cbo = f.Controls("cboFont")
+    If cbo Is Nothing Then Exit Sub
+    If cbo.ListCount > 1 Then Exit Sub
+    DoEvents                            ' oyna avval chizilib olsin
+    FillFonts cbo
+End Sub
+
+' O'rnatilgan shriftlar ro'yxati (alifbo tartibida, bir martada)
+Private Sub FillFonts(cbo As Object)
+    Dim cur As String
+    On Error Resume Next
+    cur = cbo.Text
+    LoadFontCache
+    If gFontsN > 0 Then
+        cbo.List = gFonts
+    Else
+        cbo.Clear
         cbo.AddItem "Arial"
         cbo.AddItem "Arial Narrow"
         cbo.AddItem "Calibri"
@@ -2299,23 +2373,29 @@ Private Sub FillFonts(cbo As Object)
         cbo.AddItem "Times New Roman"
         cbo.AddItem "Verdana"
     End If
+    cbo.Text = cur
 End Sub
 
 ' Shrift kompyuterda bormi; nomini to'g'ri yozilishi bilan qaytaradi.
-' Topilmasa - Arial.
+' Topilmasa - Arial. (saralangan ro'yxatda ikkilik qidiruv)
 Private Function ResolveFont(ByVal nm As String) As String
-    Dim app As Object, fl As Object, n As Long, i As Long, s As String
+    Dim lo As Long, hi As Long, m As Long, c As Long
     ResolveFont = nm
-    On Error Resume Next
-    Set app = Application
-    Set fl = app.FontList
-    n = 0
-    n = fl.Count
-    If n <= 0 Then Exit Function          ' ro'yxatni o'qib bo'lmadi - boricha qoldiramiz
-    For i = 1 To n
-        s = CStr(fl(i))
-        If StrComp(s, nm, vbTextCompare) = 0 Then ResolveFont = s: Exit Function
-    Next i
+    LoadFontCache
+    If gFontsN <= 0 Then Exit Function          ' ro'yxatni o'qib bo'lmadi - boricha qoldiramiz
+    lo = 0: hi = gFontsN - 1
+    Do While lo <= hi
+        m = (lo + hi) \ 2
+        c = StrComp(gFonts(m), nm, vbTextCompare)
+        If c = 0 Then
+            ResolveFont = gFonts(m)
+            Exit Function
+        ElseIf c < 0 Then
+            lo = m + 1
+        Else
+            hi = m - 1
+        End If
+    Loop
     ResolveFont = "Arial"
 End Function
 
