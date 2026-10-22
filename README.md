@@ -100,7 +100,7 @@ maydon ustiga sichqoncha olib borilsa, qisqa izoh chiqadi.
 
 | Karta | Maydon | Standart | Vazifasi |
 |-------|--------|----------|----------|
-| Raqamlar | Shrift | `Arial` | O'rnatilgan shriftlar ro'yxatidan. Topilmasa — Arial. |
+| Raqamlar | Shrift | `Arial` | Ro'yxatdan tanlang yoki istalgan shrift nomini yozing. Kompyuterda bo'lmasa, CorelDRAW uni o'zi almashtiradi. |
 | | Hajm, pt | Avto | `−` / `+` yoki qiymatni yozing. `−`/`+` bosilsa Avto o'chadi. |
 | | Qalin | yoqilgan | Qalin raqamlar. |
 | Chiziqlar | Qalinlik, mm | Avto | O'lcham chizig'i. Yordamchi chiziqlar 2/3 qalinlikda. |
@@ -119,9 +119,17 @@ Windows reyestriga saqlanadi.
 
 Kartalar, maydonlar, tugmalar va almashtirgichlarning yumaloq fonlari kichik
 rasm sifatida chiziladi va `%TEMP%\SizeUI` papkasida saqlanadi (faqat birinchi
-marta). Shriftlar ro'yxati CorelDRAW sessiyasida bir marta, oyna ko'ringandan
-keyin o'qiladi. **Yopish** oynani yopmaydi, yashiradi, shuning uchun keyingi
-ochilishlar darhol bo'ladi.
+marta). Bu papkaga yozib bo'lmasa (masalan, Windows foydalanuvchi nomi
+kirillcha bo'lsa), `%LOCALAPPDATA%\SizeUI` yoki `C:\SizeUI` ishlatiladi; hech
+biri bo'lmasa, oyna yumaloq burchaksiz, oddiy ranglarda ochiladi.
+**Yopish** oynani yopmaydi, yashiradi, shuning uchun keyingi ochilishlar darhol
+bo'ladi.
+
+Shrift maydoni CorelDRAW'ning shriftlar ro'yxatini o'qimaydi: ko'p shrift
+o'rnatilgan kompyuterlarda bu CorelDRAW'ni qotirib qo'yardi.
+
+Agar oyna baribir qotsa, shu papkadagi `size.log` faylini yuboring: unda har
+bir qadam vaqti bilan yoziladi va qayerda to'xtagani ko'rinadi.
 
 Agar CorelDRAW ochilgandan keyin *birinchi* makros har doim sekin ishga
 tushsa, bu CorelDRAW'ning VBA'ni kechiktirib yuklash sozlamasidan:

@@ -179,7 +179,16 @@ Private gLab() As Shape
 Private gLabW() As Double
 Private gLabH() As Double
 
-' --- o'rnatilgan shriftlar (bir marta o'qiladi, alifbo tartibida) ---
+' --- joylashtirish variantlari oqimlari (PlaceDim) ---
+Private mK(0 To 6) As Long
+Private mSd(0 To 6) As Long
+Private mSl(0 To 6) As Long
+Private mBase(0 To 6) As Double
+Private mRate(0 To 6) As Double
+Private mOn(0 To 6) As Boolean
+Private mKMax As Long
+
+' --- shrift maydoni ro'yxati (alifbo tartibida) ---
 Private gFonts() As String
 Private gFontsN As Long
 Private gFontsOk As Boolean
@@ -190,6 +199,7 @@ Private gFontsOk As Boolean
 
 ' Yagona makros: Size oynasini ochadi
 Public Sub Size()
+    UiLogStart
     If Not ShowSizeWindow() Then SizeFallbackMenu
 End Sub
 
@@ -324,6 +334,7 @@ Private Function DoSize(ok As Boolean) As String
     Dim errMsg As String, started As Boolean
 
     ok = False
+    UiLog "o'lchash boshlandi"
     Set doc = ActiveDocument
     If doc Is Nothing Then
         DoSize = "Ochiq hujjat yo'q."
@@ -386,6 +397,7 @@ CleanUp:
     ActiveWindow.Refresh
     Application.Refresh
     On Error GoTo 0
+    UiLog "o'lchash tugadi: " & gItemN & " obyekt, " & gDimN & " o'lcham " & errMsg
     If errMsg = "" Then
         ok = True
         DoSize = "Tayyor: " & gDimN & " ta o'lcham"
@@ -1162,72 +1174,75 @@ End Sub
 '   4-bosqich: chiziqlar yozuvlar ustidan o'tishi mumkin
 '   Barcha bosqichlarda raqamlar obyektlar va boshqa raqamlar ustiga tushmaydi.
 Private Sub PlaceDim(ByVal di As Long, lyr As Layer, res As ShapeRange)
-    Dim cSide() As Long, cK() As Long, cSl() As Long, cCost() As Double, nC As Long
-    Dim k As Long, sd As Long, sl As Long, i As Long, j As Long, lvl As Long, kMax As Long
-    Dim ts As Long, tk As Long, tl As Long, tc As Double
+    Dim sd As Long, sl As Long, k As Long, lvl As Long, kMax As Long
     Dim c As TCand
 
     kMax = StepsNeeded(di)
-    ReDim cSide(0 To 7 * (kMax + 1))
-    ReDim cK(0 To 7 * (kMax + 1))
-    ReDim cSl(0 To 7 * (kMax + 1))
-    ReDim cCost(0 To 7 * (kMax + 1))
-
-    For k = 0 To kMax
-        For sd = 0 To 2
-            If sd < 2 Or gDim(di).HasInside Then
-                cSide(nC) = sd: cK(nC) = k: cSl(nC) = 0
-                Select Case sd
-                    Case 0: cCost(nC) = gDim(di).CostLow + k
-                    Case 1: cCost(nC) = gDim(di).CostHigh + k
-                    Case Else: cCost(nC) = gDim(di).CostInside + k * 0.5
-                End Select
-                nC = nC + 1
-            End If
-            ' yozuvni chiziq uchidan tashqariga surish (zich joylashgan harflar uchun)
-            If sd < 2 And gDim(di).AllowSlide Then
-                For sl = 1 To 2
-                    cSide(nC) = sd: cK(nC) = k: cSl(nC) = sl
-                    If sd = 0 Then
-                        cCost(nC) = gDim(di).CostLow + 4 + k * 0.5
-                    Else
-                        cCost(nC) = gDim(di).CostHigh + 4 + k * 0.5
-                    End If
-                    nC = nC + 1
-                Next sl
-            End If
-        Next sd
-    Next k
-
-    For i = 1 To nC - 1
-        ts = cSide(i): tk = cK(i): tl = cSl(i): tc = cCost(i)
-        j = i - 1
-        Do While j >= 0
-            If cCost(j) <= tc Then Exit Do
-            cSide(j + 1) = cSide(j): cK(j + 1) = cK(j): cSl(j + 1) = cSl(j): cCost(j + 1) = cCost(j)
-            j = j - 1
-        Loop
-        cSide(j + 1) = ts: cK(j + 1) = tk: cSl(j + 1) = tl: cCost(j + 1) = tc
-    Next i
-
-    For lvl = 1 To 4
-        For i = 0 To nC - 1
-            If MakeCand(gDim(di), di, cSide(i), cK(i), cSl(i), c) Then
+    For lvl = 1 To 5
+        CandReset di, kMax
+        Do While CandNext(sd, sl, k)
+            If MakeCand(gDim(di), di, sd, k, sl, c) Then
+                ' 5-bosqich: joy topilmadi - eng maqbul variant
+                If lvl = 5 Then
+                    DrawDim di, c, lyr, res
+                    Exit Sub
+                End If
                 If CandFree(gDim(di), c, lvl) Then
                     DrawDim di, c, lyr, res
                     Exit Sub
                 End If
             End If
-        Next i
+        Loop
     Next lvl
-
-    For i = 0 To nC - 1
-        If MakeCand(gDim(di), di, cSide(i), cK(i), cSl(i), c) Then
-            DrawDim di, c, lyr, res
-            Exit Sub
-        End If
-    Next i
 End Sub
+
+' Variantlar 7 ta oqimdan keladi (tomon x surish), har birida k o'sishi bilan
+' "narx" ham o'sadi: narx = asos + qadam * k. Ularni saralamasdan birlashtirib,
+' eng arzonidan boshlab bittadan beramiz.
+'   oqimlar: 0 past, 1-2 past+surish, 3 yuqori, 4-5 yuqori+surish, 6 ichkarida
+Private Sub CandReset(ByVal di As Long, ByVal kMax As Long)
+    Dim s As Long
+    mKMax = kMax
+    For s = 0 To 6
+        mK(s) = 0
+    Next s
+    With gDim(di)
+        SetStream 0, 0, 0, .CostLow, 1, True
+        SetStream 1, 0, 1, .CostLow + 4, 0.5, .AllowSlide
+        SetStream 2, 0, 2, .CostLow + 4, 0.5, .AllowSlide
+        SetStream 3, 1, 0, .CostHigh, 1, True
+        SetStream 4, 1, 1, .CostHigh + 4, 0.5, .AllowSlide
+        SetStream 5, 1, 2, .CostHigh + 4, 0.5, .AllowSlide
+        SetStream 6, 2, 0, .CostInside, 0.5, .HasInside
+    End With
+End Sub
+
+Private Sub SetStream(ByVal s As Long, ByVal sd As Long, ByVal sl As Long, _
+                      ByVal base As Double, ByVal rate As Double, ByVal isOn As Boolean)
+    mSd(s) = sd: mSl(s) = sl
+    mBase(s) = base: mRate(s) = rate
+    mOn(s) = isOn
+End Sub
+
+' Navbatdagi eng arzon variant; teng narxda - kichik k, so'ng oqim tartibi
+Private Function CandNext(sd As Long, sl As Long, k As Long) As Boolean
+    Dim s As Long, best As Long, cost As Double, bestCost As Double
+    best = -1
+    For s = 0 To 6
+        If mOn(s) And mK(s) <= mKMax Then
+            cost = mBase(s) + mRate(s) * mK(s)
+            If best < 0 Then
+                best = s: bestCost = cost
+            ElseIf cost < bestCost Or (cost = bestCost And mK(s) < mK(best)) Then
+                best = s: bestCost = cost
+            End If
+        End If
+    Next s
+    If best < 0 Then Exit Function
+    sd = mSd(best): sl = mSl(best): k = mK(best)
+    mK(best) = mK(best) + 1
+    CandNext = True
+End Function
 
 ' Qidiruv qadamlari soni: hamma narsadan tashqariga chiqa oladigan darajada
 Private Function StepsNeeded(ByVal di As Long) As Long
@@ -1636,23 +1651,30 @@ Private Function ShowSizeWindow() As Boolean
     ' oyna allaqachon yuklangan bo'lsa - shuni ko'rsatamiz
     For Each f In VBA.UserForms
         If f.Name = FORM_FILE_NAME Or f.Name = FORM_NAME Then
+            UiLog "oyna yuklangan, ko'rsatilmoqda"
             f.Show 0
-            FillFontsDeferred f
             ShowSizeWindow = True
             Exit Function
         End If
     Next f
     Set f = Nothing
+    UiLog "SizeForm yuklanmoqda"
     Set f = LoadFormByName(FORM_FILE_NAME)
     If f Is Nothing Then
+        UiLog "SizeForm topilmadi, oyna yaratilmoqda"
         If EnsureForm() Then Set f = LoadFormByName(FORM_NAME)
     End If
-    If f Is Nothing Then Exit Function
+    If f Is Nothing Then
+        UiLog "oyna yo'q"
+        Exit Function
+    End If
+    UiLog "oyna ko'rsatilmoqda"
     f.Show 0                            ' 0 = vbModeless
-    FillFontsDeferred f                 ' shriftlar ro'yxati oyna ko'ringandan keyin
+    UiLog "oyna ko'rsatildi"
     ShowSizeWindow = True
     Exit Function
 Failed:
+    UiLog "ShowSizeWindow xato: " & Err.Description
     ShowSizeWindow = False
 End Function
 
@@ -1772,6 +1794,7 @@ End Sub
 Public Sub SizeFormBuild(f As Object)
     Dim c As Object, x As Single, y As Single, y0 As Single, cardH As Single, h3 As Single
     On Error GoTo Failed
+    UiLog "oyna tuzilmoqda"
     LoadSettings
 
     f.Caption = "Size"
@@ -1792,8 +1815,7 @@ Public Sub SizeFormBuild(f As Object)
     c.SpecialEffect = 0: c.BorderStyle = 0
     c.ShowDropButtonWhen = 2: c.DropButtonStyle = 1
     UiFont c, False, 9, CText()
-    c.AddItem gFontName                 ' to'liq ro'yxat oyna ochilgandan keyin yuklanadi
-    c.Text = gFontName
+    FillFonts c, gFontName
     y = y + UI_ROW + UI_RGAP
     UiRowLabel f, x, y, "Hajm, pt", "Raqamlar hajmi. Avto -- harflar balandligiga qarab"
     UiStepper f, x + UI_CTL, y, "Font", IIf(gFontPt > 0, FormatNum(gFontPt), "36")
@@ -1859,8 +1881,10 @@ Public Sub SizeFormBuild(f As Object)
     c.TabStop = False
 
     SizeFormSync f
+    UiLog "oyna tuzildi"
     Exit Sub
 Failed:
+    UiLog "oyna tuzishda xato: " & Err.Description
     MsgBox "Size: oynani tayyorlashda xatolik." & vbCr & Err.Description, vbExclamation, "Size"
 End Sub
 
@@ -1872,7 +1896,7 @@ Public Sub SizeFormSync(f As Object)
     SyncStepper f, "Line", "txtLine", TogVal(f, "tglLineAuto")
     SyncStepper f, "Arrow", "txtArrow", TogVal(f, "tglArrowAuto")
     If ParseColor(f.Controls("txtColor").Text, r, g, b) Then
-        Set f.Controls("lblSwatch").Picture = UiPic("dot", 12, 12, 6, VBA.RGB(r, g, b), CLine(), CField(), False, 0)
+        SetPic f.Controls("lblSwatch"), UiPic("dot", 12, 12, 6, VBA.RGB(r, g, b), CLine(), CField(), False, 0), VBA.RGB(r, g, b)
     End If
 End Sub
 
@@ -1966,9 +1990,8 @@ Private Sub UiCard(f As Object, ByVal x As Single, ByVal y As Single, ByVal w As
     Dim c As Object
     Set c = f.Controls.Add("Forms.Label.1")
     c.Left = x: c.Top = y: c.Width = w: c.Height = h
-    c.BackStyle = 0
     c.PicturePosition = 12                          ' markazda
-    Set c.Picture = UiPic("card", w, h, UI_CR, CCard(), CLine(), CBg(), True, 0)
+    SetPic c, UiPic("card", w, h, UI_CR, CCard(), CLine(), CBg(), True, 0), CCard()
     If title <> "" Then
         Set c = f.Controls.Add("Forms.Label.1")
         c.Left = x + UI_PAD: c.Top = y + UI_PAD - 1: c.Width = w - UI_PAD * 2: c.Height = UI_TITLE
@@ -1993,9 +2016,8 @@ Private Sub UiFieldBg(f As Object, ByVal x As Single, ByVal y As Single, ByVal w
     Dim c As Object
     Set c = f.Controls.Add("Forms.Label.1")
     c.Left = x: c.Top = y: c.Width = w: c.Height = UI_ROW
-    c.BackStyle = 0
     c.PicturePosition = 12
-    Set c.Picture = UiPic("field", w, UI_ROW, UI_R, CField(), CField(), bg, False, 0)
+    SetPic c, UiPic("field", w, UI_ROW, UI_R, CField(), CField(), bg, False, 0), CField()
 End Sub
 
 ' Maydon ichidagi shaffof matn kiritish qutisi
@@ -2075,10 +2097,10 @@ Private Sub SetToggle(f As Object, ByVal nm As String, ByVal isOn As Boolean)
     With f.Controls(nm)
         If isOn Then
             .Tag = "1"
-            Set .Picture = UiPic("tgl", UI_TGW, UI_TGH, UI_TGH / 2, COn(), COn(), CCard(), False, 1)
+            SetPic f.Controls(nm), UiPic("tgl", UI_TGW, UI_TGH, UI_TGH / 2, COn(), COn(), CCard(), False, 1), COn()
         Else
             .Tag = "0"
-            Set .Picture = UiPic("tgl", UI_TGW, UI_TGH, UI_TGH / 2, COff(), COff(), CCard(), False, -1)
+            SetPic f.Controls(nm), UiPic("tgl", UI_TGW, UI_TGH, UI_TGH / 2, COff(), COff(), CCard(), False, -1), COff()
         End If
     End With
 End Sub
@@ -2099,10 +2121,10 @@ Private Sub UiButton(f As Object, ByVal nm As String, ByVal txt As String, ByVal
     c.Caption = UZ(txt)
     If tip <> "" Then c.ControlTipText = UZ(tip)
     If primary Then
-        Set c.Picture = UiPic("btn", w, UI_ROW, UI_R, CPrimary(), CPrimary(), bg, False, 0)
+        SetPic c, UiPic("btn", w, UI_ROW, UI_R, CPrimary(), CPrimary(), bg, False, 0), CPrimary()
         UiFont c, True, 9, VBA.RGB(255, 255, 255)
     Else
-        Set c.Picture = UiPic("btn", w, UI_ROW, UI_R, CField(), CField(), bg, False, 0)
+        SetPic c, UiPic("btn", w, UI_ROW, UI_R, CField(), CField(), bg, False, 0), CField()
         UiFont c, False, 9, CText()
     End If
 End Sub
@@ -2110,30 +2132,105 @@ End Sub
 ' --- yumaloq shakllar rasmi (24-bit BMP, silliq chetlar) ---
 
 ' knob: 0 = yo'q, 1 = o'ngda (yoqilgan), -1 = chapda (o'chirilgan)
+' Rasmni yaratib bo'lmasa - Nothing (unda oddiy fon rangi ishlatiladi)
 Private Function UiPic(ByVal kind As String, ByVal wPt As Single, ByVal hPt As Single, ByVal rPt As Single, _
                        ByVal fill As Long, ByVal border As Long, ByVal bg As Long, _
                        ByVal shadow As Boolean, ByVal knob As Long) As Object
-    Dim dpi As Long, w As Long, h As Long, r As Double, path As String
+    Static failed As Boolean
+    Dim dpi As Long, w As Long, h As Long, r As Double, path As String, dirp As String
+    If failed Then Exit Function
+    dirp = UiDir()
+    If dirp = "" Then failed = True: Exit Function
+    On Error GoTo Failure
     dpi = ScreenDpi()
     w = CLng(wPt * dpi / 72): h = CLng(hPt * dpi / 72)
     If w < 2 Then w = 2
     If h < 2 Then h = 2
     r = rPt * dpi / 72
-    path = UiDir() & "\" & kind & "_" & w & "x" & h & "_" & CLng(r * 10) & "_" & Hex$(fill) & "_" & _
+    path = dirp & "\" & kind & "_" & w & "x" & h & "_" & CLng(r * 10) & "_" & Hex$(fill) & "_" & _
            Hex$(border) & "_" & Hex$(bg) & "_" & IIf(shadow, "s", "n") & knob & "_v1.bmp"
     If Len(Dir$(path)) = 0 Then WriteShapeBmp path, w, h, r, fill, border, bg, shadow, knob, dpi
     Set UiPic = LoadPicture(path)
+    Exit Function
+Failure:
+    failed = True
+    UiLog "rasm yaratilmadi: " & Err.Description
+    Set UiPic = Nothing
 End Function
 
+' Rasm bo'lsa - rasm, bo'lmasa - oddiy fon rangi
+Private Sub SetPic(c As Object, ByVal pic As Object, ByVal fallback As Long)
+    If pic Is Nothing Then
+        c.BackStyle = 1
+        c.BackColor = fallback
+    Else
+        c.BackStyle = 0
+        Set c.Picture = pic
+    End If
+End Sub
+
+' Rasmlar va jurnal uchun papka: %TEMP%, %LOCALAPPDATA% yoki C:\ dagi SizeUI.
+' Yo'lda kirillcha harflar bo'lsa (VBA ularni "?" qiladi) yoki yozib bo'lmasa,
+' keyingisi sinab ko'riladi. Hech biri bo'lmasa - "".
 Private Function UiDir() As String
-    Dim p As String
-    p = Environ$("TEMP")
-    If p = "" Then p = Environ$("TMP")
-    p = p & "\SizeUI"
-    On Error Resume Next
-    If Len(Dir$(p, vbDirectory)) = 0 Then MkDir p
-    UiDir = p
+    Static cached As String, done As Boolean
+    Dim cands(0 To 2) As String, i As Long, p As String
+    If done Then UiDir = cached: Exit Function
+    done = True
+    cands(0) = Environ$("TEMP")
+    cands(1) = Environ$("LOCALAPPDATA")
+    cands(2) = Environ$("SystemDrive")
+    If cands(2) = "" Then cands(2) = "C:"
+    For i = 0 To 2
+        If cands(i) <> "" And InStr(1, cands(i), "?") = 0 Then
+            p = cands(i) & "\SizeUI"
+            If DirWritable(p) Then
+                cached = p
+                Exit For
+            End If
+        End If
+    Next i
+    UiDir = cached
 End Function
+
+Private Function DirWritable(ByVal p As String) As Boolean
+    Dim fn As Integer
+    On Error GoTo Failed
+    If Len(Dir$(p, vbDirectory)) = 0 Then MkDir p
+    fn = FreeFile
+    Open p & "\test.tmp" For Output As #fn
+    Print #fn, "ok"
+    Close #fn
+    Kill p & "\test.tmp"
+    DirWritable = True
+    Exit Function
+Failed:
+    DirWritable = False
+End Function
+
+' --- diagnostika jurnali: <UiDir>\size.log (har ishga tushishda yangidan) ---
+
+Private Sub UiLogStart()
+    Dim fn As Integer, d As String
+    On Error Resume Next
+    d = UiDir()
+    If d = "" Then Exit Sub
+    fn = FreeFile
+    Open d & "\size.log" For Output As #fn
+    Print #fn, "Size " & Format$(Now, "yyyy-mm-dd hh:nn:ss")
+    Close #fn
+End Sub
+
+Private Sub UiLog(ByVal msg As String)
+    Dim fn As Integer, d As String
+    On Error Resume Next
+    d = UiDir()
+    If d = "" Then Exit Sub
+    fn = FreeFile
+    Open d & "\size.log" For Append As #fn
+    Print #fn, Format$(Timer, "0.000") & "  " & msg
+    Close #fn
+End Sub
 
 Private Function ScreenDpi() As Long
     Static cached As Long
@@ -2285,35 +2382,21 @@ Private Sub PutLong(b() As Byte, ByVal off As Long, ByVal v As Long)
     b(off + 3) = (v \ &H1000000) And &HFF&
 End Sub
 
-' Shriftlar ro'yxatini CorelDRAW'dan bir marta o'qiydi va saralaydi
+' Shrift maydoni ro'yxati: keng tarqalgan Windows shriftlari (alifbo tartibida).
+' CorelDRAW'ning FontList'i ishlatilmaydi: u har bir shriftni alohida so'raydi va
+' shrift ko'p bo'lsa CorelDRAW qotib qolardi. Maydonga istalgan nomni yozish mumkin.
 Private Sub LoadFontCache()
-    Dim app As Object, fl As Object, n As Long, i As Long, k As Long
+    Dim lst As Variant, i As Long
     If gFontsOk Then Exit Sub
     gFontsOk = True
-    gFontsN = 0
-    On Error Resume Next
-    Set app = Application
-    Set fl = app.FontList
-    n = 0
-    n = fl.Count
-    If n <= 0 Then Exit Sub
-    ReDim gFonts(0 To n - 1)
-    For i = 1 To n
-        gFonts(gFontsN) = CStr(fl(i))
-        If Len(gFonts(gFontsN)) > 0 Then gFontsN = gFontsN + 1
+    lst = Array("Arial", "Arial Narrow", "Bahnschrift", "Calibri", "Cambria", "Candara", _
+                "Consolas", "Segoe UI", "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana")
+    gFontsN = UBound(lst) - LBound(lst) + 1
+    ReDim gFonts(0 To gFontsN - 1)
+    For i = 0 To gFontsN - 1
+        gFonts(i) = lst(LBound(lst) + i)
     Next i
-    If gFontsN = 0 Then Exit Sub
     QuickSortStr gFonts, 0, gFontsN - 1
-    ' takrorlarni olib tashlash
-    k = 0
-    For i = 1 To gFontsN - 1
-        If StrComp(gFonts(i), gFonts(k), vbTextCompare) <> 0 Then
-            k = k + 1
-            gFonts(k) = gFonts(i)
-        End If
-    Next i
-    gFontsN = k + 1
-    ReDim Preserve gFonts(0 To gFontsN - 1)
 End Sub
 
 Private Sub QuickSortStr(a() As String, ByVal lo As Long, ByVal hi As Long)
@@ -2344,51 +2427,36 @@ Private Sub QuickSortStr(a() As String, ByVal lo As Long, ByVal hi As Long)
     Loop
 End Sub
 
-' Ro'yxat bo'sh bo'lsa (oyna endi ochilgan) - to'ldiradi
-Private Sub FillFontsDeferred(f As Object)
-    Dim cbo As Object
+' Shrift maydoni ro'yxati; joriy shrift ro'yxatda bo'lmasa, u ham qo'shiladi
+Private Sub FillFonts(cbo As Object, ByVal cur As String)
     On Error Resume Next
-    Set cbo = f.Controls("cboFont")
-    If cbo Is Nothing Then Exit Sub
-    If cbo.ListCount > 1 Then Exit Sub
-    DoEvents                            ' oyna avval chizilib olsin
-    FillFonts cbo
-End Sub
-
-' O'rnatilgan shriftlar ro'yxati (alifbo tartibida, bir martada)
-Private Sub FillFonts(cbo As Object)
-    Dim cur As String
-    On Error Resume Next
-    cur = cbo.Text
     LoadFontCache
-    If gFontsN > 0 Then
-        cbo.List = gFonts
-    Else
-        cbo.Clear
-        cbo.AddItem "Arial"
-        cbo.AddItem "Arial Narrow"
-        cbo.AddItem "Calibri"
-        cbo.AddItem "Segoe UI"
-        cbo.AddItem "Tahoma"
-        cbo.AddItem "Times New Roman"
-        cbo.AddItem "Verdana"
-    End If
+    cbo.List = gFonts
+    If cur <> "" And ResolveFontIndex(cur) < 0 Then cbo.AddItem cur, 0
     cbo.Text = cur
 End Sub
 
-' Shrift kompyuterda bormi; nomini to'g'ri yozilishi bilan qaytaradi.
-' Topilmasa - Arial. (saralangan ro'yxatda ikkilik qidiruv)
+' Ro'yxatdagi shrift bo'lsa - to'g'ri yozilishini qaytaradi, bo'lmasa nomni
+' o'zgartirmaydi (yo'q shriftni CorelDRAW o'zi almashtiradi)
 Private Function ResolveFont(ByVal nm As String) As String
+    Dim i As Long
+    nm = Trim$(nm)
+    If nm = "" Then nm = "Arial"
+    i = ResolveFontIndex(nm)
+    If i >= 0 Then ResolveFont = gFonts(i) Else ResolveFont = nm
+End Function
+
+' Saralangan ro'yxatda ikkilik qidiruv; topilmasa -1
+Private Function ResolveFontIndex(ByVal nm As String) As Long
     Dim lo As Long, hi As Long, m As Long, c As Long
-    ResolveFont = nm
+    ResolveFontIndex = -1
     LoadFontCache
-    If gFontsN <= 0 Then Exit Function          ' ro'yxatni o'qib bo'lmadi - boricha qoldiramiz
     lo = 0: hi = gFontsN - 1
     Do While lo <= hi
         m = (lo + hi) \ 2
         c = StrComp(gFonts(m), nm, vbTextCompare)
         If c = 0 Then
-            ResolveFont = gFonts(m)
+            ResolveFontIndex = m
             Exit Function
         ElseIf c < 0 Then
             lo = m + 1
@@ -2396,7 +2464,6 @@ Private Function ResolveFont(ByVal nm As String) As String
             hi = m - 1
         End If
     Loop
-    ResolveFont = "Arial"
 End Function
 
 ' Oyna (UserForm) moduli kodi - SizeForm.frm bilan bir xil. SizeForm import
