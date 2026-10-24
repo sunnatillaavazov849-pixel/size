@@ -93,6 +93,10 @@ Har bir **O'lchash** bitta qadam sifatida yoziladi, shuning uchun
 mumkin. Qayta ishga tushirilganda yangi o'lchamlar oldingi o'lchamlar
 ustiga tushmaydi.
 
+Ko'p harfli yozuvlarda **O'lchash** tezroq bo'lishi uchun o'lchash paytida
+*Object Manager* oynasini yopib qo'ying: u ochiq bo'lsa, CorelDRAW har bir
+yangi shaklda uni qayta chizadi.
+
 ## Size oynasi
 
 Oyna minimalistik: och kulrang fon, oq kartalar, yumaloq burchaklar. Har bir
@@ -171,6 +175,10 @@ kabi shrift o'lchamiga mos ravishda kattalashadi yoki kichrayadi.
 - **Yordamchi chiziqlar** aynan shu chetki nuqtalardan boshlanadi. Iloji
   bo'lsa, oraliq strelkalari ikkala harfning chetki nuqtasiga to'g'ridan-to'g'ri
   tegib turadi.
+- **Chizish.** Tezlik uchun barcha yordamchi chiziqlar, barcha o'lcham
+  chiziqlari va barcha strelkalar uchta shakl bo'lib chiziladi (`Size ext`,
+  `Size lines`, `Size arrows`). Har bir raqam alohida matn bo'lib qoladi.
+  Hammasi bitta `Size` guruhida turadi.
 - **Joylashtirish.** Eni odatda obyektning tepasiga, bo'yi bo'sh joyi ko'p
   tomonga, oraliq esa iloji bo'lsa ikki obyekt o'rtasiga, bo'lmasa pastga
   qo'yiladi. Har bir o'lcham uchun ko'plab variantlar tekshiriladi va raqami

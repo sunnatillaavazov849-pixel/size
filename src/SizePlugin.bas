@@ -164,6 +164,7 @@ Private gItemN As Long
 Private gPc() As TBox
 Private gPcE() As TExt
 Private gPcN As Long
+Private gCurveInfoOk As Boolean     ' GetCurveInfo tez yo'li ishlayaptimi
 
 ' --- Joylashtirilgan elementlar (to'qnashuvni tekshirish uchun) ---
 Private gEl() As TBox
@@ -178,6 +179,15 @@ Private gDimN As Long
 Private gLab() As Shape
 Private gLabW() As Double
 Private gLabH() As Double
+Private gCloneOk As Boolean         ' yozuvlarni nusxalash usuli ishlayaptimi
+Private gCloneChecked As Boolean
+
+' --- chizish: barcha chiziqlar va strelkalar uchta umumiy egri chiziqqa yig'iladi ---
+Private gCrvExt As Curve            ' yordamchi chiziqlar
+Private gCrvLine As Curve           ' o'lcham chiziqlari
+Private gCrvArrow As Curve          ' strelkalar
+Private gUnion As TBox              ' harflar va chizilgan elementlarning umumiy chegarasi
+Private gUnionOk As Boolean
 
 ' --- joylashtirish variantlari oqimlari (PlaceDim) ---
 Private mK(0 To 6) As Long
@@ -332,6 +342,7 @@ Private Function DoSize(ok As Boolean) As String
     Dim res As ShapeRange, grp As Shape
     Dim oldUnit As cdrUnit
     Dim errMsg As String, started As Boolean
+    Dim oldPreserve As Boolean, oldEvents As Boolean
 
     ok = False
     UiLog "o'lchash boshlandi"
@@ -355,9 +366,19 @@ Private Function DoSize(ok As Boolean) As String
     doc.BeginCommandGroup "Size"
     started = True
     Application.Optimization = True
+    ' har bir yangi shaklda tanlov va hodisalar qayta ishlanmasin (ancha tezroq)
+    oldPreserve = True: oldEvents = True
+    On Error Resume Next
+    oldPreserve = doc.PreserveSelection
+    doc.PreserveSelection = False
+    oldEvents = Application.EventsEnabled
+    Application.EventsEnabled = False
+    Err.Clear
+    On Error GoTo Failed
     doc.Unit = cdrCentimeter
 
     CollectItems sel
+    UiLog "obyektlar yig'ildi: " & gItemN
     If gItemN = 0 Then
         errMsg = "Tanlovda o'lchanadigan obyekt yo'q."
         GoTo CleanUp
@@ -374,14 +395,17 @@ Private Function DoSize(ok As Boolean) As String
     CollectExisting lyr
 
     BuildDims
+    UiLog "o'lchamlar ro'yxati: " & gDimN
     If gDimN = 0 Then
         errMsg = "O'lcham topilmadi."
         GoTo CleanUp
     End If
 
     CreateLabels lyr
+    UiLog "yozuvlar yaratildi"
     Set res = CreateShapeRange
     PlaceAll lyr, res
+    UiLog "joylashtirildi va chizildi"
     If res.Count > 0 Then
         Set grp = res.Group
         grp.Name = "Size"
@@ -390,6 +414,8 @@ Private Function DoSize(ok As Boolean) As String
 CleanUp:
     On Error Resume Next
     doc.Unit = oldUnit
+    doc.PreserveSelection = oldPreserve
+    Application.EventsEnabled = oldEvents
     Application.Optimization = False
     If started Then doc.EndCommandGroup
     If Not oldLayer Is Nothing Then oldLayer.Activate
@@ -418,6 +444,7 @@ End Function
 Private Sub CollectItems(sel As ShapeRange)
     Dim s As Shape
     gItemN = 0
+    gCurveInfoOk = True
     ReDim gItem(0 To 31)
     ReDim gItemE(0 To 31)
     For Each s In sel
@@ -545,15 +572,13 @@ Private Function PiecesFromCurve(crv As Curve, s As Shape) As Boolean
     Dim sp As SubPath, b As TBox, e As TExt, ow As Double, n0 As Long
     n0 = gPcN
     If gUseOutline Then ow = OutlineHalf(s)
+    If PiecesFromCurveInfo(crv, ow) Then
+        PiecesFromCurve = (gPcN > n0)
+        Exit Function
+    End If
     On Error GoTo Failed
     For Each sp In crv.SubPaths
-        If SubPathBox(sp, b, e) Then
-            If ow > 0 Then
-                b.L = b.L - ow: b.R = b.R + ow
-                b.B = b.B - ow: b.T = b.T + ow
-            End If
-            AddPiece b, e
-        End If
+        If SubPathBox(sp, b, e) Then AddPieceOw b, e, ow
     Next sp
     PiecesFromCurve = (gPcN > n0)
     Exit Function
@@ -561,6 +586,69 @@ Failed:
     gPcN = n0
     PiecesFromCurve = False
 End Function
+
+' Tez yo'l: barcha tugunlar bitta GetCurveInfo chaqiruvida o'qiladi (har bir
+' tugunni alohida o'qish ko'p harfli matnda sekin). Natija ishonchsiz bo'lsa,
+' bo'laklar qo'shilmaydi va False qaytadi - oddiy yo'l ishlatiladi.
+Private Function PiecesFromCurveInfo(crv As Curve, ByVal ow As Double) As Boolean
+    Dim v As Variant, o As Object, nd As Node
+    Dim px() As Double, py() As Double, st() As Long
+    Dim i As Long, n As Long, nsp As Long, et As Long, k As Long, m As Long, n0 As Long
+    Dim b As TBox, e As TExt
+
+    n0 = gPcN
+    If Not gCurveInfoOk Then Exit Function
+    On Error GoTo Failed
+    Set o = crv
+    v = o.GetCurveInfo
+    If Not IsArray(v) Then GoTo Failed
+    m = UBound(v) - LBound(v)
+    If m < 0 Then GoTo Failed
+    ReDim px(0 To m)
+    ReDim py(0 To m)
+    ReDim st(0 To m + 1)
+    For i = LBound(v) To UBound(v)
+        et = v(i).ElementType
+        If et <> 3 Then                         ' 3 = boshqaruv nuqtasi (tugun emas)
+            If et = 0 Then                      ' 0 = kontur boshi
+                st(nsp) = n
+                nsp = nsp + 1
+            End If
+            If nsp = 0 Then GoTo Failed
+            px(n) = v(i).PositionX
+            py(n) = v(i).PositionY
+            n = n + 1
+        End If
+    Next i
+    If n = 0 Or nsp <> crv.SubPaths.Count Then GoTo Failed
+    st(nsp) = n
+
+    ' birinchi tugun haqiqiy tugun bilan mos kelishi kerak (birlik va tartib to'g'ri)
+    Set nd = crv.SubPaths(1).StartNode
+    If Abs(nd.PositionX - px(0)) > 0.0001 Or Abs(nd.PositionY - py(0)) > 0.0001 Then GoTo Failed
+
+    For k = 0 To nsp - 1
+        If st(k + 1) <= st(k) Then GoTo Failed
+        If Not NodesBox(px, py, st(k), st(k + 1) - 1, crv.SubPaths(k + 1), b, e, True) Then GoTo Failed
+        AddPieceOw b, e, ow
+    Next k
+    PiecesFromCurveInfo = True
+    Exit Function
+Failed:
+    ' bu versiyada ishlamadi - qolgan konturlar oddiy yo'l bilan o'qiladi
+    gCurveInfoOk = False
+    gPcN = n0
+    PiecesFromCurveInfo = False
+End Function
+
+' Bo'lak (kontur qalinligining yarmi bilan kengaytirilgan)
+Private Sub AddPieceOw(b As TBox, e As TExt, ByVal ow As Double)
+    If ow > 0 Then
+        b.L = b.L - ow: b.R = b.R + ow
+        b.B = b.B - ow: b.T = b.T + ow
+    End If
+    AddPiece b, e
+End Sub
 
 ' Matnning konturini o'qib bo'lmasa: vaqtinchalik nusxa egri chiziqqa
 ' aylantiriladi, o'lchanadi va o'chiriladi.
@@ -594,8 +682,6 @@ End Function
 ' eng o'ngga / chapga, qaysi joyda eng tepaga / pastga chiqib turgani)
 Private Function SubPathBox(sp As SubPath, b As TBox, e As TExt) As Boolean
     Dim nd As Node, n As Long, i As Long, px() As Double, py() As Double
-    Dim x As Double, y As Double, w As Double, h As Double, o As Object, tol As Double
-    Dim xb As TBox
 
     n = sp.Nodes.Count
     If n = 0 Then Exit Function
@@ -607,9 +693,19 @@ Private Function SubPathBox(sp As SubPath, b As TBox, e As TExt) As Boolean
         py(i) = nd.PositionY
         i = i + 1
     Next nd
+    SubPathBox = NodesBox(px, py, 0, n - 1, sp, b, e, False)
+End Function
 
-    b = MkBox(px(0), py(0), px(0), py(0))
-    For i = 1 To n - 1
+' Kontur tugunlari (px/py, i0..i1) bo'yicha chegaralar va eng chetki nuqtalar.
+' sp - shu kontur: uning aniq chegaralari ham qo'shiladi. strict = True bo'lsa,
+' tugunlar shu chegaradan tashqariga chiqsa (noto'g'ri o'qilgan) - False.
+Private Function NodesBox(px() As Double, py() As Double, ByVal i0 As Long, ByVal i1 As Long, _
+                          ByVal sp As Object, b As TBox, e As TExt, ByVal strict As Boolean) As Boolean
+    Dim i As Long, x As Double, y As Double, w As Double, h As Double, tol As Double
+    Dim xb As TBox
+
+    b = MkBox(px(i0), py(i0), px(i0), py(i0))
+    For i = i0 + 1 To i1
         If px(i) < b.L Then b.L = px(i)
         If px(i) > b.R Then b.R = px(i)
         If py(i) < b.B Then b.B = py(i)
@@ -618,11 +714,15 @@ Private Function SubPathBox(sp As SubPath, b As TBox, e As TExt) As Boolean
 
     ' aniq chegaralar (egri segmentlarning bo'rtib chiqqan joylari bilan)
     On Error Resume Next
-    Set o = sp
     w = -1: h = -1
-    o.GetBoundingBox x, y, w, h
+    sp.GetBoundingBox x, y, w, h
     If Err.Number = 0 And w >= 0 And h >= 0 Then
         xb = MkBox(x, y, x + w, y + h)
+        If strict Then
+            tol = Max2(w, h) * 0.01 + 0.001
+            If b.L < xb.L - tol Or b.R > xb.R + tol Or _
+               b.B < xb.B - tol Or b.T > xb.T + tol Then Exit Function
+        End If
         b = UnionBox(b, xb)
     End If
     Err.Clear
@@ -631,7 +731,7 @@ Private Function SubPathBox(sp As SubPath, b As TBox, e As TExt) As Boolean
     tol = Max2(b.R - b.L, b.T - b.B) * 0.01 + 0.0001
     e.RLo = BIG: e.RHi = -BIG: e.LLo = BIG: e.LHi = -BIG
     e.TLo = BIG: e.THi = -BIG: e.BLo = BIG: e.BHi = -BIG
-    For i = 0 To n - 1
+    For i = i0 To i1
         If px(i) >= b.R - tol Then e.RLo = Min2(e.RLo, py(i)): e.RHi = Max2(e.RHi, py(i))
         If px(i) <= b.L + tol Then e.LLo = Min2(e.LLo, py(i)): e.LHi = Max2(e.LHi, py(i))
         If py(i) >= b.T - tol Then e.TLo = Min2(e.TLo, px(i)): e.THi = Max2(e.THi, px(i))
@@ -641,7 +741,7 @@ Private Function SubPathBox(sp As SubPath, b As TBox, e As TExt) As Boolean
     If e.LLo > e.LHi Then e.LLo = b.B: e.LHi = b.T
     If e.TLo > e.THi Then e.TLo = b.L: e.THi = b.R
     If e.BLo > e.BHi Then e.BLo = b.L: e.BHi = b.R
-    SubPathBox = True
+    NodesBox = True
 End Function
 
 Private Function OutlineHalf(s As Shape) As Double
@@ -1127,26 +1227,77 @@ End Function
 '  JOYLASHTIRISH
 '==============================================================================
 
+' Birinchi yozuv (gorizontal va burilgani alohida) to'liq yaratiladi, qolganlari
+' undan nusxa olinib, faqat matni almashtiriladi - bu ancha tezroq.
 Private Sub CreateLabels(lyr As Layer)
-    Dim i As Long, s As Shape
+    Dim i As Long, s As Shape, rot As Boolean, txt As String
+    Dim tplH As Shape, tplV As Shape
     Dim x As Double, y As Double, w As Double, h As Double
     ReDim gLab(0 To gDimN - 1)
     ReDim gLabW(0 To gDimN - 1)
     ReDim gLabH(0 To gDimN - 1)
+    gCloneOk = True
+    gCloneChecked = False
     For i = 0 To gDimN - 1
-        Set s = lyr.CreateArtisticText(0, 0, FormatCm(gDim(i).Value), _
-                                       Font:=gFontName, Size:=gPt, _
-                                       Bold:=IIf(gBold, cdrTrue, cdrFalse))
-        ApplyLabelFont s
-        s.Fill.ApplyUniformFill gColor
-        s.Outline.SetNoOutline
-        If gDim(i).Orient = 1 And gRotateVertical Then s.Rotate 90
+        txt = FormatCm(gDim(i).Value)
+        rot = (gDim(i).Orient = 1 And gRotateVertical)
+        If rot Then
+            Set s = CloneLabel(tplV, txt)
+        Else
+            Set s = CloneLabel(tplH, txt)
+        End If
+        If s Is Nothing Then
+            Set s = NewLabel(lyr, txt, rot)
+            If rot Then
+                If tplV Is Nothing Then Set tplV = s
+            ElseIf tplH Is Nothing Then
+                Set tplH = s
+            End If
+        End If
         s.GetBoundingBox x, y, w, h, False
         Set gLab(i) = s
         gLabW(i) = w
         gLabH(i) = h
     Next i
 End Sub
+
+Private Function NewLabel(lyr As Layer, ByVal txt As String, ByVal rot As Boolean) As Shape
+    Dim s As Shape
+    Set s = lyr.CreateArtisticText(0, 0, txt, Font:=gFontName, Size:=gPt, _
+                                   Bold:=IIf(gBold, cdrTrue, cdrFalse))
+    ApplyLabelFont s
+    s.Fill.ApplyUniformFill gColor
+    s.Outline.SetNoOutline
+    If rot Then s.Rotate 90
+    Set NewLabel = s
+End Function
+
+' Tayyor yozuvdan nusxa: shrift, rang va burilish saqlanadi, faqat matn
+' almashadi. Ishlamasa - Nothing (yozuv NewLabel bilan yaratiladi).
+Private Function CloneLabel(tpl As Shape, ByVal txt As String) As Shape
+    Dim s As Shape
+    If tpl Is Nothing Then Exit Function
+    If Not gCloneOk Then Exit Function
+    On Error GoTo Failed
+    Set s = tpl.Duplicate
+    s.Text.Story.Text = txt
+    ' birinchi nusxada shrift saqlanganini tekshiramiz
+    If Not gCloneChecked Then
+        If s.Text.Story.Font <> tpl.Text.Story.Font Or _
+           Abs(s.Text.Story.Size - tpl.Text.Story.Size) > 0.01 Or _
+           s.Text.Story.Bold <> tpl.Text.Story.Bold Then GoTo Discard
+        gCloneChecked = True
+    End If
+    Set CloneLabel = s
+    Exit Function
+Failed:
+    Resume Discard
+Discard:
+    gCloneOk = False
+    On Error Resume Next
+    If Not s Is Nothing Then s.Delete
+    Set CloneLabel = Nothing
+End Function
 
 ' Shrift, o'lcham va qalinlikni butun matnga aniq qo'llash
 ' (ba'zi versiyalarda CreateArtisticText parametrlari to'liq qo'llanmaydi)
@@ -1162,9 +1313,50 @@ End Sub
 
 Private Sub PlaceAll(lyr As Layer, res As ShapeRange)
     Dim i As Long
-    For i = 0 To gDimN - 1
-        PlaceDim i, lyr, res
+    Set gCrvExt = Application.CreateCurve(ActiveDocument)
+    Set gCrvLine = Application.CreateCurve(ActiveDocument)
+    Set gCrvArrow = Application.CreateCurve(ActiveDocument)
+
+    ' umumiy chegara bir marta hisoblanadi, keyin AddEl uni kengaytirib boradi
+    gUnion = gItem(0)
+    For i = 1 To gItemN - 1
+        gUnion = UnionBox(gUnion, gItem(i))
     Next i
+    For i = 0 To gElN - 1
+        gUnion = UnionBox(gUnion, gEl(i))
+    Next i
+    gUnionOk = True
+
+    For i = 0 To gDimN - 1
+        PlaceDim i, res
+    Next i
+
+    ' har bir turdagi chiziqlar bitta shakl bo'lib chiziladi
+    AddCurveShape lyr, gCrvExt, "Size ext", gExtW, False, res
+    AddCurveShape lyr, gCrvLine, "Size lines", gLineW, False, res
+    AddCurveShape lyr, gCrvArrow, "Size arrows", 0, True, res
+    Set gCrvExt = Nothing
+    Set gCrvLine = Nothing
+    Set gCrvArrow = Nothing
+End Sub
+
+Private Sub AddCurveShape(lyr As Layer, crv As Curve, ByVal nm As String, ByVal wid As Double, _
+                          ByVal filled As Boolean, res As ShapeRange)
+    Dim s As Shape
+    If crv.SubPaths.Count = 0 Then Exit Sub
+    Set s = lyr.CreateCurve(crv)
+    s.Name = nm
+    If filled Then
+        s.Fill.ApplyUniformFill gColor
+        s.Outline.SetNoOutline
+    Else
+        On Error Resume Next
+        s.Outline.Type = 1          ' cdrOutline - kontur yoqilgan bo'lsin
+        On Error GoTo 0
+        s.Outline.Width = wid
+        s.Outline.Color.RGBAssign gColR, gColG, gColB
+    End If
+    res.Add s
 End Sub
 
 ' Variantlarni "narxi" bo'yicha saralab, birinchi bo'sh joyni tanlaydi.
@@ -1173,7 +1365,7 @@ End Sub
 '   3-bosqich: o'lcham chizig'i ham obyekt ustidan o'tishi mumkin
 '   4-bosqich: chiziqlar yozuvlar ustidan o'tishi mumkin
 '   Barcha bosqichlarda raqamlar obyektlar va boshqa raqamlar ustiga tushmaydi.
-Private Sub PlaceDim(ByVal di As Long, lyr As Layer, res As ShapeRange)
+Private Sub PlaceDim(ByVal di As Long, res As ShapeRange)
     Dim sd As Long, sl As Long, k As Long, lvl As Long, kMax As Long
     Dim c As TCand
 
@@ -1184,11 +1376,11 @@ Private Sub PlaceDim(ByVal di As Long, lyr As Layer, res As ShapeRange)
             If MakeCand(gDim(di), di, sd, k, sl, c) Then
                 ' 5-bosqich: joy topilmadi - eng maqbul variant
                 If lvl = 5 Then
-                    DrawDim di, c, lyr, res
+                    DrawDim di, c, res
                     Exit Sub
                 End If
                 If CandFree(gDim(di), c, lvl) Then
-                    DrawDim di, c, lyr, res
+                    DrawDim di, c, res
                     Exit Sub
                 End If
             End If
@@ -1246,14 +1438,8 @@ End Function
 
 ' Qidiruv qadamlari soni: hamma narsadan tashqariga chiqa oladigan darajada
 Private Function StepsNeeded(ByVal di As Long) As Long
-    Dim u As TBox, i As Long, span As Double, n As Double
-    u = gItem(0)
-    For i = 1 To gItemN - 1
-        u = UnionBox(u, gItem(i))
-    Next i
-    For i = 0 To gElN - 1
-        u = UnionBox(u, gEl(i))
-    Next i
+    Dim u As TBox, span As Double, n As Double
+    u = gUnion
     span = Max2(u.R - u.L, u.T - u.B) + gLabW(di) + gLabH(di)
     n = span / gStep + 3
     If n < MIN_STEPS Then n = MIN_STEPS
@@ -1419,7 +1605,7 @@ Private Function ExtBox(d As TDim, ByVal a As Double, ByVal p1 As Double, ByVal 
     End If
 End Function
 
-Private Sub DrawDim(ByVal di As Long, c As TCand, lyr As Layer, res As ShapeRange)
+Private Sub DrawDim(ByVal di As Long, c As TCand, res As ShapeRange)
     Dim d As TDim, lbl As Shape, eo As Long, bx As TBox
     Dim x As Double, y As Double, w As Double, h As Double
 
@@ -1428,8 +1614,8 @@ Private Sub DrawDim(ByVal di As Long, c As TCand, lyr As Layer, res As ShapeRang
 
     ' yordamchi chiziqlar
     If c.HasExt Then
-        res.Add Seg(lyr, d, d.A1, c.E1From, d.A1, c.E1To, gExtW)
-        res.Add Seg(lyr, d, d.A2, c.E2From, d.A2, c.E2To, gExtW)
+        Seg gCrvExt, d, d.A1, c.E1From, d.A1, c.E1To
+        Seg gCrvExt, d, d.A2, c.E2From, d.A2, c.E2To
         bx = ExtBox(d, d.A1, c.E1From, c.E1To)
         AddEl bx, 3, eo, d.A1
         bx = ExtBox(d, d.A2, c.E2From, c.E2To)
@@ -1437,13 +1623,13 @@ Private Sub DrawDim(ByVal di As Long, c As TCand, lyr As Layer, res As ShapeRang
     End If
 
     ' o'lcham chizig'i va strelkalar
-    res.Add Seg(lyr, d, c.LineLo, c.Pos, c.LineHi, c.Pos, gLineW)
+    Seg gCrvLine, d, c.LineLo, c.Pos, c.LineHi, c.Pos
     If c.ArrowsOut Then
-        res.Add Arrow(lyr, d, d.A1, c.Pos, 1)
-        res.Add Arrow(lyr, d, d.A2, c.Pos, -1)
+        Arrow d, d.A1, c.Pos, 1
+        Arrow d, d.A2, c.Pos, -1
     Else
-        res.Add Arrow(lyr, d, d.A1, c.Pos, -1)
-        res.Add Arrow(lyr, d, d.A2, c.Pos, 1)
+        Arrow d, d.A1, c.Pos, -1
+        Arrow d, d.A2, c.Pos, 1
     End If
     bx = LineBox(d, c)
     AddEl bx, 2, 0, 0
@@ -1456,44 +1642,35 @@ Private Sub DrawDim(ByVal di As Long, c As TCand, lyr As Layer, res As ShapeRang
     AddEl c.Lab, 1, 0, 0
 End Sub
 
-' (A, P) koordinatalaridagi chiziq
-Private Function Seg(lyr As Layer, d As TDim, ByVal a1 As Double, ByVal p1 As Double, _
-                     ByVal a2 As Double, ByVal p2 As Double, ByVal wid As Double) As Shape
-    Dim s As Shape
+' (A, P) koordinatalaridagi chiziq - umumiy egri chiziqqa qo'shiladi
+Private Sub Seg(crv As Curve, d As TDim, ByVal a1 As Double, ByVal p1 As Double, _
+                ByVal a2 As Double, ByVal p2 As Double)
+    Dim sp As SubPath
     If d.Orient = 0 Then
-        Set s = lyr.CreateLineSegment(a1, p1, a2, p2)
+        Set sp = crv.CreateSubPath(a1, p1)
+        sp.AppendLineSegment a2, p2
     Else
-        Set s = lyr.CreateLineSegment(p1, a1, p2, a2)
+        Set sp = crv.CreateSubPath(p1, a1)
+        sp.AppendLineSegment p2, a2
     End If
-    On Error Resume Next
-    s.Outline.Type = 1              ' cdrOutline - kontur yoqilgan bo'lsin
-    On Error GoTo 0
-    s.Outline.Width = wid
-    s.Outline.Color.RGBAssign gColR, gColG, gColB
-    Set Seg = s
-End Function
+End Sub
 
 ' Uchi (tipA, pos) nuqtada, A o'qi bo'yicha dirSign tomonga qaragan strelka
-Private Function Arrow(lyr As Layer, d As TDim, ByVal tipA As Double, ByVal pos As Double, _
-                       ByVal dirSign As Long) As Shape
-    Dim crv As Curve, sp As SubPath, s As Shape, baseA As Double
+' (umumiy strelkalar egri chizig'iga qo'shiladi)
+Private Sub Arrow(d As TDim, ByVal tipA As Double, ByVal pos As Double, ByVal dirSign As Long)
+    Dim sp As SubPath, baseA As Double
     baseA = tipA - dirSign * gArrowL
-    Set crv = Application.CreateCurve(ActiveDocument)
     If d.Orient = 0 Then
-        Set sp = crv.CreateSubPath(tipA, pos)
+        Set sp = gCrvArrow.CreateSubPath(tipA, pos)
         sp.AppendLineSegment baseA, pos + gArrowW
         sp.AppendLineSegment baseA, pos - gArrowW
     Else
-        Set sp = crv.CreateSubPath(pos, tipA)
+        Set sp = gCrvArrow.CreateSubPath(pos, tipA)
         sp.AppendLineSegment pos + gArrowW, baseA
         sp.AppendLineSegment pos - gArrowW, baseA
     End If
     sp.Closed = True
-    Set s = lyr.CreateCurve(crv)
-    s.Fill.ApplyUniformFill gColor
-    s.Outline.SetNoOutline
-    Set Arrow = s
-End Function
+End Sub
 
 '==============================================================================
 '  TO'SIQLAR (OBSTACLES)
@@ -1501,6 +1678,7 @@ End Function
 
 Private Sub ResetElements()
     gElN = 0
+    gUnionOk = False
     ReDim gEl(0 To 63)
     ReDim gElKind(0 To 63)
     ReDim gElOr(0 To 63)
@@ -1521,6 +1699,7 @@ Private Sub AddEl(b As TBox, ByVal kind As Long, ByVal ori As Long, ByVal coord 
     gElOr(gElN) = ori
     gElC(gElN) = coord
     gElN = gElN + 1
+    If gUnionOk Then gUnion = UnionBox(gUnion, b)
 End Sub
 
 ' Oldingi Size o'lchamlari ham to'siq hisoblanadi (yangilari ular ustiga tushmaydi)
@@ -1532,16 +1711,69 @@ Private Sub CollectExisting(lyr As Layer)
     If sr Is Nothing Then Exit Sub
     For Each s In sr
         If s.Type <> cdrGroupShape Then
-            s.GetBoundingBox x, y, w, h, False
-            b = MkBox(x, y, x + w, y + h)
             If s.Type = cdrTextShape Then
+                s.GetBoundingBox x, y, w, h, False
+                b = MkBox(x, y, x + w, y + h)
                 AddEl b, 1, 0, 0
-            Else
+            ElseIf Not AddSubPathEls(s) Then
+                s.GetBoundingBox x, y, w, h, False
+                b = MkBox(x, y, x + w, y + h)
                 AddEl b, 2, 0, 0
             End If
         End If
     Next s
 End Sub
+
+' Bir nechta chiziqdan iborat Size shakli: har bir chiziq / strelka alohida
+' to'siq (butun shaklning ramkasi hamma joyni band qilib qo'yardi)
+Private Function AddSubPathEls(s As Shape) As Boolean
+    Dim crv As Curve, sp As SubPath, b As TBox, n0 As Long
+    n0 = gElN
+    On Error GoTo Failed
+    If s.Type <> cdrCurveShape Then Exit Function
+    Set crv = s.Curve
+    If crv.SubPaths.Count < 2 Then Exit Function
+    For Each sp In crv.SubPaths
+        If Not SubPathRect(sp, b) Then GoTo Failed
+        AddEl b, 2, 0, 0
+    Next sp
+    AddSubPathEls = True
+    Exit Function
+Failed:
+    gElN = n0
+    AddSubPathEls = False
+End Function
+
+' Konturning chegaralari (GetBoundingBox bo'lmasa - tugunlar bo'yicha)
+Private Function SubPathRect(sp As SubPath, b As TBox) As Boolean
+    Dim o As Object, nd As Node, pb As TBox, first As Boolean
+    Dim x As Double, y As Double, w As Double, h As Double
+    On Error Resume Next
+    Set o = sp
+    w = -1: h = -1
+    o.GetBoundingBox x, y, w, h
+    If Err.Number = 0 And w >= 0 And h >= 0 Then
+        b = MkBox(x, y, x + w, y + h)
+        SubPathRect = True
+        Exit Function
+    End If
+    Err.Clear
+    On Error GoTo Failed
+    first = True
+    For Each nd In sp.Nodes
+        x = nd.PositionX
+        y = nd.PositionY
+        pb = MkBox(x, y, x, y)
+        If first Then
+            b = pb
+            first = False
+        Else
+            b = UnionBox(b, pb)
+        End If
+    Next nd
+    SubPathRect = Not first
+Failed:
+End Function
 
 '==============================================================================
 '  SOZLAMALAR
